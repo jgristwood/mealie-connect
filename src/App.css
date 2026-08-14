@@ -142,12 +142,6 @@ button {
   color: var(--primary);
 }
 
-.header-connect-link {
-  position: absolute;
-  top: 20px;
-  right: 48px;
-}
-
 .header-import-button {
   position: absolute;
   top: 16px;
@@ -1881,6 +1875,7 @@ select:focus {
 .library-recipe-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   grid-auto-rows: 520px;
+  justify-items: center;
   gap: 48px 28px;
 }
 
@@ -1889,6 +1884,8 @@ select:focus {
   flex-direction: column;
   height: 100%;
   min-width: 0;
+  width: 100%;
+  max-width: 340px;
   border: 0;
   border-radius: 0;
   background: transparent;
@@ -1924,6 +1921,8 @@ select:focus {
 .library-recipe-card .recipe-card-body {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  text-align: center;
   padding: 14px 0 0;
 }
 
@@ -1950,6 +1949,12 @@ select:focus {
 .library-recipe-card .recipe-card-body > span {
   color: var(--muted);
   font-size: 0.8rem;
+}
+
+.library-recipe-card .recipe-card-kicker,
+.library-recipe-card .recipe-card-body > p:not(.recipe-card-kicker),
+.library-recipe-card h3 {
+  width: 100%;
 }
 
 @media (min-width: 721px) {
@@ -2097,6 +2102,10 @@ select:focus {
   .library-recipe-grid {
     grid-template-columns: minmax(0, 1fr);
     grid-auto-rows: auto;
+  }
+
+  .library-recipe-card {
+    max-width: 360px;
   }
 }
 
@@ -2627,5 +2636,119 @@ select:focus {
   .home-tools .section-heading h2,
   .import-strip h2 {
     font-size: 1.7rem;
+  }
+}
+
+@media (max-width: 720px) {
+  html,
+  body,
+  #root {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
+  *,
+  *::before,
+  *::after {
+    min-width: 0;
+  }
+
+  .app-shell,
+  .cook-shell {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  main :is(h1, h2, h3, h4, p, small, strong, label, a, span) {
+    max-width: 90%;
+    overflow-wrap: anywhere;
+  }
+
+  main :is(h1, h2, h3, h4) {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  main img,
+  main svg,
+  main video,
+  main canvas {
+    max-width: 100%;
+  }
+
+  .app-header,
+  .main-nav,
+  .page-intro,
+  .home-intro,
+  .home-feature,
+  .feature-copy,
+  .library-controls,
+  .library-recipe-grid,
+  .detail-hero,
+  .task-form,
+  .setup-form,
+  .setup-secondary,
+  .import-strip {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .app-header {
+    width: 100%;
+    max-width: 100%;
+    margin-left: 0;
+    padding: 160px 0 18px;
+  }
+
+  .brand-cluster {
+    position: absolute;
+    top: 4px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .main-nav {
+    width: 100%;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .main-nav.has-home {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .main-nav a {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+    justify-content: center;
+    padding-left: 4px;
+    padding-right: 4px;
+    font-size: 0.7rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .home-intro h1,
+  .home-feature .feature-copy h2,
+  .page-intro h1,
+  .library-controls .filter-header h2,
+  .detail-hero .detail-summary h2,
+  .random-hero h2,
+  .cook-panel h2,
+  .setup-intro h1 {
+    max-width: 90%;
+    white-space: normal;
+  }
+
+  .library-controls .filter-header h2 {
+    max-width: 100%;
+    font-size: 1.2rem;
+    white-space: nowrap;
   }
 }

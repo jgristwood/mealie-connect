@@ -45,7 +45,7 @@ function AppHeader({ activeProfile, showHomeButton = true }: { activeProfile: Me
         ) : null}
       </div>
       {activeProfile ? (
-        <nav className="main-nav" aria-label="Primary navigation">
+        <nav className={showHomeButton ? 'main-nav has-home' : 'main-nav'} aria-label="Primary navigation">
           {showHomeButton ? <Link to="/">Home</Link> : null}
           <Link to="/recipes">Recipes</Link>
           <Link to="/meal-plan">Meal plan</Link>
@@ -53,7 +53,6 @@ function AppHeader({ activeProfile, showHomeButton = true }: { activeProfile: Me
         </nav>
       ) : null}
       <Link className="header-import-button" to="/import" aria-label="Import a recipe" title="Import a recipe">+</Link>
-      {!activeProfile ? <Link className="text-link header-connect-link" to="/setup">Connect</Link> : null}
     </header>
   )
 }
