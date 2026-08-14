@@ -1988,6 +1988,48 @@ select:focus {
   background: var(--border);
 }
 
+.recipe-load-more {
+  min-height: 56px;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.back-to-top {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm);
+  background: var(--primary);
+  color: var(--surface);
+  font-size: 0.82rem;
+  font-weight: 700;
+  box-shadow: var(--shadow);
+  transition: background var(--ease), border-color var(--ease), transform var(--ease);
+}
+
+.back-to-top:hover {
+  border-color: var(--primary-strong);
+  background: var(--primary-strong);
+  transform: translateY(-1px);
+}
+
+@media (max-width: 640px) {
+  .back-to-top {
+    right: 14px;
+    bottom: 14px;
+  }
+}
+
 @media (max-width: 720px) {
   .page-intro {
     padding: 48px 0 30px;

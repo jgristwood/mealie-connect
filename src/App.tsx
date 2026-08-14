@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { authService } from './services/auth/auth-service'
 import { MealieClient } from './services/mealie/mealie-client'
@@ -14,6 +14,8 @@ import type {
   MealieWeekPlan,
 } from './types/mealie'
 import './App.css'
+
+const RECIPES_PAGE_SIZE = 50
 
 const normalizeInstructionSteps = (recipe: MealieRecipeDetail): MealieInstructionStep[] => {
   if (Array.isArray((recipe as MealieRecipeDetail & { steps?: MealieInstructionStep[] }).steps)) {
@@ -88,6 +90,8 @@ function App() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
+  const [loadingMoreRecipes, setLoadingMoreRecipes] = useState(false)
+  const [hasMoreRecipes, setHasMoreRecipes] = useState(false)
   const [error, setError] = useState('')
 
   const loadProfiles = () => {
@@ -105,6 +109,7 @@ function App() {
       setRecipes([])
       setCategories([])
       setTags([])
+      setHasMoreRecipes(false)
       return
     }
 
@@ -123,7 +128,8 @@ function App() {
             search: searchTerm,
             categories: selectedCategories,
             tags: selectedTags,
-            perPage: 50,
+            page: 1,
+            perPage: RECIPES_PAGE_SIZE,
           }),
           client.getCategories(),
           client.getTags(),
@@ -135,6 +141,7 @@ function App() {
         const nextTags = results[2]?.status === 'fulfilled' ? results[2].value : []
 
         setRecipes(nextRecipes)
+        setHasMoreRecipes(nextRecipes.length === RECIPES_PAGE_SIZE)
         setCategories(nextCategories)
         setTags(nextTags)
 
@@ -153,6 +160,30 @@ function App() {
 
     return () => window.clearTimeout(timeout)
   }, [activeProfile, searchTerm, selectedCategories, selectedTags])
+
+  const loadMoreRecipes = useCallback(async () => {
+    if (!activeProfile || loading || loadingMoreRecipes || !hasMoreRecipes) return
+
+    setLoadingMoreRecipes(true)
+    try {
+      const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
+      const nextRecipes = await client.getRecipes({
+        search: searchTerm,
+        categories: selectedCategories,
+        tags: selectedTags,
+        page: Math.floor(recipes.length / RECIPES_PAGE_SIZE) + 1,
+        perPage: RECIPES_PAGE_SIZE,
+      })
+
+      setRecipes((current) => [...current, ...nextRecipes])
+      setHasMoreRecipes(nextRecipes.length === RECIPES_PAGE_SIZE)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unable to load more recipes.'
+      setError(message)
+    } finally {
+      setLoadingMoreRecipes(false)
+    }
+  }, [activeProfile, hasMoreRecipes, loading, loadingMoreRecipes, recipes.length, searchTerm, selectedCategories, selectedTags])
 
   const signIn = async (
     server: string,
@@ -218,6 +249,9 @@ function App() {
               selectedTags={selectedTags}
               setSelectedTags={setSelectedTags}
               loading={loading}
+              loadingMore={loadingMoreRecipes}
+              hasMore={hasMoreRecipes}
+              onLoadMore={loadMoreRecipes}
               error={error}
             />
           }
@@ -653,6 +687,9 @@ function RecipesPage({
   selectedTags,
   setSelectedTags,
   loading,
+  loadingMore,
+  hasMore,
+  onLoadMore,
   error,
 }: {
   activeProfile: MealieProfile | null
@@ -666,8 +703,36 @@ function RecipesPage({
   selectedTags: string[]
   setSelectedTags: (value: string[]) => void
   loading: boolean
+  loadingMore: boolean
+  hasMore: boolean
+  onLoadMore: () => void
   error: string
 }) {
+  const loadMoreTrigger = useRef<HTMLDivElement>(null)
+  const [showBackToTop, setShowBackToTop] = useState(false)
+
+  useEffect(() => {
+    const trigger = loadMoreTrigger.current
+    if (!trigger || !hasMore) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) onLoadMore()
+      },
+      { rootMargin: '480px 0px' },
+    )
+
+    observer.observe(trigger)
+    return () => observer.disconnect()
+  }, [hasMore, onLoadMore])
+
+  useEffect(() => {
+    const updateScrollState = () => setShowBackToTop(window.scrollY > 480)
+    updateScrollState()
+    window.addEventListener('scroll', updateScrollState, { passive: true })
+    return () => window.removeEventListener('scroll', updateScrollState)
+  }, [])
+
   const toggleCategory = (id: string) => {
     setSelectedCategories(
       selectedCategories.includes(id)
@@ -817,6 +882,21 @@ function RecipesPage({
               </article>
             ))}
           </section>
+          {hasMore ? (
+            <div ref={loadMoreTrigger} className="recipe-load-more" aria-live="polite">
+              {loadingMore ? 'Loading more recipes…' : 'Scroll for more recipes'}
+            </div>
+          ) : null}
+          {showBackToTop ? (
+            <button
+              type="button"
+              className="back-to-top"
+              aria-label="Back to top"
+              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            >
+              ↑ <span>Top</span>
+            </button>
+          ) : null}
         </>
       )}
     </main>
