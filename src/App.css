@@ -157,6 +157,7 @@ button {
   font-size: 1.45rem;
   font-weight: 400;
   line-height: 1;
+  padding-bottom: 2px;
   text-decoration: none;
   transition: background var(--ease), border-color var(--ease), transform var(--ease);
 }
@@ -1816,6 +1817,10 @@ select:focus {
 }
 
 .page-intro-action {
+  display: flex;
+  width: fit-content;
+  margin-right: auto;
+  margin-left: auto;
   margin-top: 4px;
 }
 
@@ -2244,14 +2249,17 @@ select:focus {
 
 .task-form .form-stack {
   max-width: 820px;
+  margin: 0 auto;
 }
 
 .task-form .form-stack > label:first-child {
   max-width: 520px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 .task-form .primary-button {
-  justify-self: start;
+  justify-self: center;
 }
 
 .list-stack {
@@ -2296,6 +2304,10 @@ select:focus {
   display: flex;
   flex-shrink: 0;
   gap: 8px;
+}
+
+.list-row-actions .small-button {
+  min-width: 88px;
 }
 
 .danger-action {
@@ -2418,6 +2430,18 @@ select:focus {
   gap: 12px;
   max-width: 420px;
   margin-left: auto;
+}
+
+.random-actions > div {
+  display: grid;
+  width: 100%;
+  gap: 12px;
+}
+
+.random-actions > div > a,
+.random-actions > div > button {
+  width: 100%;
+  max-width: none;
 }
 
 .random-actions .random-actions {
@@ -2713,12 +2737,13 @@ select:focus {
   .main-nav {
     width: 100%;
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 4px;
+    margin-top: 18px;
   }
 
   .main-nav.has-home {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .main-nav a {
@@ -2744,6 +2769,12 @@ select:focus {
   .setup-intro h1 {
     max-width: 90%;
     white-space: normal;
+  }
+
+  .library-recipe-card-link,
+  .library-recipe-card .recipe-card-action {
+    width: 100%;
+    max-width: 100%;
   }
 
   .library-controls .filter-header h2 {
