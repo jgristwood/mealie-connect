@@ -7,7 +7,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg'],
+      includeAssets: ['mealie-connect-logo.svg'],
       manifest: {
         name: 'Mealie Connect',
         short_name: 'Mealie Connect',
@@ -19,14 +19,14 @@ export default defineConfig({
         orientation: 'portrait-primary',
         icons: [
           {
-            src: 'pwa-192x192.png',
+            src: 'mealie-connect-logo.svg',
             sizes: '192x192',
-            type: 'image/png',
+            type: 'image/svg+xml',
           },
           {
-            src: 'pwa-512x512.png',
+            src: 'mealie-connect-logo.svg',
             sizes: '512x512',
-            type: 'image/png',
+            type: 'image/svg+xml',
           },
         ],
       },
