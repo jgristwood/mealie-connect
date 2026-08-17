@@ -18,6 +18,7 @@
   --radius-md: 12px;
   --radius-lg: 18px;
   --ease: 180ms ease;
+  --brand-logo-filter: brightness(0) saturate(100%) invert(25%) sepia(23%) saturate(1000%) hue-rotate(285deg) brightness(0.82) contrast(1.2);
 }
 
 /* Purple is the original Mealie Connect identity and remains the explicit
@@ -38,6 +39,7 @@
   --danger: #a33c3c;
   --success: #32745a;
   --shadow: 0 10px 28px rgba(75, 54, 45, 0.07);
+  --brand-logo-filter: brightness(0) saturate(100%) invert(25%) sepia(23%) saturate(1000%) hue-rotate(285deg) brightness(0.82) contrast(1.2);
 }
 
 :root[data-theme='blue'] {
@@ -55,6 +57,7 @@
   --danger: #b3403a;
   --success: #2a7a56;
   --shadow: 0 10px 28px rgba(31, 63, 120, 0.08);
+  --brand-logo-filter: brightness(0) saturate(100%) invert(34%) sepia(65%) saturate(500%) hue-rotate(174deg) brightness(0.9) contrast(1.15);
 }
 
 :root[data-theme='red'] {
@@ -74,6 +77,7 @@
   --danger: #8f2f2f;
   --success: #32745a;
   --shadow: 0 10px 28px rgba(124, 42, 36, 0.08);
+  --brand-logo-filter: brightness(0) saturate(100%) invert(30%) sepia(58%) saturate(1100%) hue-rotate(336deg) brightness(0.8) contrast(1.15);
 }
 
 :root[data-theme='green'] {
@@ -91,6 +95,7 @@
   --danger: #a33c3c;
   --success: #2f7a4f;
   --shadow: 0 10px 28px rgba(39, 83, 55, 0.08);
+  --brand-logo-filter: brightness(0) saturate(100%) invert(32%) sepia(35%) saturate(900%) hue-rotate(118deg) brightness(0.9) contrast(1.15);
 }
 
 :root[data-theme='dark'] {
@@ -108,6 +113,7 @@
   --danger: #e08585;
   --success: #6ec6a1;
   --shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  --brand-logo-filter: brightness(0) saturate(100%) invert(69%) sepia(22%) saturate(514%) hue-rotate(262deg) brightness(1.2) contrast(1.1);
 }
 
 @keyframes page-enter {
@@ -243,6 +249,32 @@ button {
 
 .header-profile-link:hover {
   color: var(--primary);
+}
+
+.header-settings-button {
+  position: absolute;
+  top: 16px;
+  right: 52px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--primary-strong);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  transition: background var(--ease), border-color var(--ease), transform var(--ease);
+}
+
+.header-settings-button:hover,
+.header-settings-button.active {
+  border-color: rgba(113, 58, 114, 0.45);
+  background: var(--accent-soft);
+  transform: translateY(-1px);
 }
 
 .header-import-button {
@@ -546,12 +578,132 @@ button {
   flex: 1;
 }
 
+.settings-page {
+  display: grid;
+  gap: 20px;
+}
+
+.settings-page-header {
+  padding-bottom: 8px;
+}
+
+.settings-page-header h1 {
+  margin-bottom: 0;
+}
+
+.settings-panel {
+  display: grid;
+  gap: 18px;
+  margin-top: 28px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-panel-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-panel-header h2 {
+  margin: 0;
+  color: var(--primary-strong);
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(1.8rem, 3vw, 2.35rem);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+
+.settings-panel-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 20px;
+}
+
+.settings-block {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  padding: 18px 18px 16px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--surface);
+}
+
+.settings-profile-summary {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+}
+
+.settings-profile-summary strong {
+  color: var(--primary-strong);
+  font-size: 1rem;
+}
+
+.settings-block .profile-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.account-details-theme {
+  display: grid;
+  gap: 12px;
+}
+
+.theme-menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.theme-swatch-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 12px 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-muted);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 600;
+  transition: background var(--ease), border-color var(--ease), transform var(--ease);
+}
+
+.theme-swatch-button:hover {
+  border-color: rgba(113, 58, 114, 0.45);
+  background: var(--accent-soft);
+  transform: translateY(-1px);
+}
+
+.theme-swatch-button.active {
+  border-color: rgba(113, 58, 114, 0.5);
+  background: var(--accent-soft);
+  color: var(--primary-strong);
+}
+
+.theme-swatch-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
 .text-button {
   border: 0;
   background: transparent;
   cursor: pointer;
+  color: var(--primary-strong);
   font-weight: 700;
   padding: 8px 0;
+}
+
+.danger-text {
+  color: var(--primary-strong);
 }
 
 .sr-only {
@@ -601,11 +753,14 @@ button {
   text-align: center;
 }
 
-.brand-logo {
+.brand-logo,
+.brand-hero-logo {
   display: block;
   width: 42px;
   height: 42px;
   object-fit: contain;
+  filter: var(--brand-logo-filter);
+  transition: filter var(--ease);
 }
 
 .brand-lockup.compact .brand-logo {
@@ -2926,51 +3081,6 @@ select:focus {
   line-height: 1;
   display: block;
   margin-bottom: 8px;
-}
-
-.account-details-theme {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
-}
-
-.theme-menu {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 10px;
-}
-
-.theme-swatch-button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  font-size: 0.85rem;
-  cursor: pointer;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.theme-swatch-button:hover {
-  border-color: var(--primary);
-}
-
-.theme-swatch-button.active {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 2px var(--accent-soft);
-  font-weight: 600;
-}
-
-.theme-swatch-dot {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  flex-shrink: 0;
 }
 
 /* Dinner Roulette page */

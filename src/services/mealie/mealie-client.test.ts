@@ -47,6 +47,75 @@ describe('MealieClient', () => {
     })
   })
 
+  it('imports a recipe URL through the create/url endpoint and loads the created recipe', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse('imported-slug', 201))
+      .mockResolvedValueOnce(jsonResponse({
+        id: 'recipe-3',
+        name: 'Imported Soup',
+        slug: 'imported-slug',
+        recipeIngredient: [],
+        recipeInstructions: [],
+      }))
+    const client = new MealieClient({ baseUrl: 'http://mealie.test', token: 'token' })
+
+    await expect(client.importRecipeFromUrl('https://example.com/recipe')).resolves.toMatchObject({
+      id: 'recipe-3',
+      name: 'Imported Soup',
+      slug: 'imported-slug',
+    })
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('http://mealie.test/api/recipes/create/url')
+    const requestInit = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined
+    expect(requestInit?.method).toBe('POST')
+    expect(requestInit?.body).toBe(JSON.stringify({
+      url: 'https://example.com/recipe',
+      includeTags: true,
+      includeCategories: true,
+    }))
+    const headers = new Headers(requestInit?.headers)
+    expect(headers.has('Authorization')).toBe(true)
+    expect(headers.get('Content-Type')).toBe('application/json')
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('http://mealie.test/api/recipes/imported-slug')
+  })
+
+  it('surfaces validation details from a 422 recipe import response', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      jsonResponse({ detail: [{ msg: 'URL is required' }] }, 422),
+    )
+    const client = new MealieClient({ baseUrl: 'http://mealie.test', token: 'token' })
+
+    await expect(client.importRecipeFromUrl('https://example.com/recipe')).rejects.toThrow(
+      'Recipe import failed: URL is required',
+    )
+  })
+
+  it('maps authentication and scraper failures to user-friendly messages', async () => {
+    const client = new MealieClient({ baseUrl: 'http://mealie.test', token: 'token' })
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({ detail: [{ msg: 'Not authenticated' }] }, 401))
+    await expect(client.importRecipeFromUrl('https://example.com/recipe')).rejects.toThrow(
+      'Mealie authentication failed. Please sign in again.',
+    )
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({ detail: [{ msg: 'Forbidden' }] }, 403))
+    await expect(client.importRecipeFromUrl('https://example.com/recipe')).rejects.toThrow(
+      'Mealie rejected the recipe import: you do not have permission to import recipes.',
+    )
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({ message: 'Could not extract recipe from URL' }, 500))
+    await expect(client.importRecipeFromUrl('https://example.com/recipe')).rejects.toThrow(
+      'Mealie could not extract a recipe from this website: Could not extract recipe from URL',
+    )
+  })
+
+  it('propagates network failures while importing', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    const client = new MealieClient({ baseUrl: 'http://mealie.test', token: 'token' })
+
+    await expect(client.importRecipeFromUrl('https://example.com/recipe')).rejects.toThrow('Failed to fetch')
+  })
+
   it('uses organizer endpoints for categories and tags', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(jsonResponse({ items: [{ id: 'category-1', name: 'Dinner' }] }))

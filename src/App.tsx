@@ -40,6 +40,9 @@ const normalizeInstructionSteps = (recipe: MealieRecipeDetail): MealieInstructio
 }
 
 function AppHeader({ activeProfile, showHomeButton = true }: { activeProfile: MealieProfile | null; showHomeButton?: boolean }) {
+  const location = useLocation()
+  const isSettingsPage = location.pathname === '/settings'
+
   return (
     <header className="app-header">
       <div className="brand-cluster">
@@ -62,6 +65,9 @@ function AppHeader({ activeProfile, showHomeButton = true }: { activeProfile: Me
           <Link to="/meal-plan">Meal plan</Link>
           <Link to="/shopping">Shopping list</Link>
         </nav>
+      ) : null}
+      {activeProfile && !isSettingsPage ? (
+        <Link className="header-settings-button" to="/settings" aria-label="Open settings">Settings</Link>
       ) : null}
       <Link className="header-import-button" to="/import" aria-label="Import a recipe" title="Import a recipe">+</Link>
     </header>
@@ -257,10 +263,18 @@ function App() {
           element={
             <HomePage
               activeProfile={activeProfile}
-              profiles={profiles}
               recipes={recipes}
               loading={loading}
               error={error}
+            />
+          }
+        />
+        <Route
+          path="/settings"
+          element={
+            <SettingsPage
+              activeProfile={activeProfile}
+              profiles={profiles}
               onSelectProfile={setActiveProfile}
               onSignOut={signOut}
             />
@@ -328,22 +342,17 @@ function App() {
 
 function HomePage({
   activeProfile,
-  profiles,
   recipes,
   loading,
   error,
-  onSelectProfile,
-  onSignOut,
 }: {
   activeProfile: MealieProfile | null
-  profiles: MealieProfile[]
   recipes: MealieRecipeSummary[]
   loading: boolean
   error: string
-  onSelectProfile: (profile: MealieProfile) => void
-  onSignOut: () => void
 }) {
   const overview = useMemo(() => recipes.slice(0, 4), [recipes])
+
   return (
     <main className="app-shell">
       <AppHeader activeProfile={activeProfile} showHomeButton={false} />
@@ -409,21 +418,73 @@ function HomePage({
           <div className="preview-lines" aria-hidden="true"><span /><span /><span /></div>
         </section>
       )}
+    </main>
+  )
+}
 
-      {activeProfile && profiles.length > 0 ? (
-        <details className="account-details">
-          <summary>Account and connection</summary>
-          <div className="account-details-body">
-            <div><strong>{activeProfile.displayName ?? activeProfile.username ?? 'Mealie user'}</strong><span>{activeProfile.server}</span></div>
-            <div className="profile-list">{profiles.map((profile) => <button key={profile.id} type="button" className={`profile-item ${activeProfile.id === profile.id ? 'active' : ''}`} onClick={() => onSelectProfile(profile)}>{profile.displayName ?? profile.username ?? profile.name}</button>)}</div>
-            <div className="account-details-theme">
-              <p className="eyebrow">Appearance</p>
-              <ThemeMenu />
+function SettingsPage({
+  activeProfile,
+  profiles,
+  onSelectProfile,
+  onSignOut,
+}: {
+  activeProfile: MealieProfile | null
+  profiles: MealieProfile[]
+  onSelectProfile: (profile: MealieProfile) => void
+  onSignOut: () => void
+}) {
+  if (!activeProfile) {
+    return (
+      <main className="app-shell narrow">
+        <AppHeader activeProfile={null} />
+        <section className="page-empty compact-empty">
+          <p className="eyebrow">Preferences</p>
+          <h1>Settings</h1>
+          <p>No active Mealie account is connected.</p>
+          <Link className="primary-button" to="/setup">Connect to Mealie</Link>
+        </section>
+      </main>
+    )
+  }
+
+  return (
+    <main className="app-shell narrow">
+      <AppHeader activeProfile={activeProfile} />
+      <section className="settings-page">
+        <div className="settings-page-header">
+          <p className="eyebrow">Preferences</p>
+          <h1>Settings</h1>
+        </div>
+
+        <div className="settings-panel-grid">
+          <div className="settings-block">
+            <p className="eyebrow">Connection</p>
+            <div className="settings-profile-summary">
+              <strong>{activeProfile.displayName ?? activeProfile.username ?? 'Mealie user'}</strong>
+              <span>{activeProfile.server}</span>
             </div>
-            <button type="button" className="text-button danger-text" onClick={onSignOut}>Sign out</button>
+            <div className="profile-list">
+              {profiles.map((profile) => (
+                <button
+                  key={profile.id}
+                  type="button"
+                  className={`profile-item ${activeProfile.id === profile.id ? 'active' : ''}`}
+                  onClick={() => onSelectProfile(profile)}
+                >
+                  {profile.displayName ?? profile.username ?? profile.name}
+                </button>
+              ))}
+            </div>
           </div>
-        </details>
-      ) : null}
+
+          <div className="settings-block account-details-theme">
+            <p className="eyebrow">Appearance</p>
+            <ThemeMenu />
+          </div>
+        </div>
+
+        <button type="button" className="text-button danger-text" onClick={onSignOut}>Sign out</button>
+      </section>
     </main>
   )
 }
@@ -678,7 +739,7 @@ function ImportRecipePage({ activeProfile }: { activeProfile: MealieProfile | nu
       const importedRecipe = await client.importRecipeFromUrl(parsedUrl.toString())
       setImportUrl('')
       setMessage(`Imported “${importedRecipe.name}”.`)
-      window.location.href = '/'
+      window.location.href = `/recipes/${importedRecipe.slug || importedRecipe.id}`
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to import recipe.')
     } finally {

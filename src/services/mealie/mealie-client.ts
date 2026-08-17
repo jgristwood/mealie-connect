@@ -363,17 +363,132 @@ export class MealieClient {
   }
 
   async importRecipeFromUrl(url: string): Promise<MealieRecipeDetail> {
-    const response = await fetch(`${this.baseUrl}/api/recipes/create/url?url=${encodeURIComponent(url)}`, {
-      method: 'POST',
-      headers: this.headers(),
-    })
-
-    if (!response.ok) {
-      throw new Error(`Failed to import recipe from URL (server returned ${response.status}).`)
+    const endpoint = `${this.baseUrl}/api/recipes/create/url`
+    const payload = {
+      url,
+      includeTags: true,
+      includeCategories: true,
     }
 
-    const data = await this.safeJsonParse<Record<string, unknown>>(response, 'Failed to parse imported recipe')
-    return this.normalizeRecipeDetail(data)
+    if (import.meta.env.DEV) {
+      console.debug('[Mealie import]', {
+        method: 'POST',
+        url: endpoint,
+        bodyKeys: Object.keys(payload),
+      })
+    }
+
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify(payload),
+    })
+
+    const responseText = await response.text()
+
+    if (import.meta.env.DEV) {
+      console.debug('[Mealie import response]', {
+        status: response.status,
+        body: this.summarizeResponseBody(responseText),
+      })
+    }
+
+    if (!response.ok) {
+      throw new Error(this.formatRecipeImportError(response.status, responseText))
+    }
+
+    const parsed = this.parseRecipeImportResponse(responseText)
+
+    if (typeof parsed === 'string') {
+      return await this.getRecipe(parsed)
+    }
+
+    return this.normalizeRecipeDetail(parsed)
+  }
+
+  private parseRecipeImportResponse(responseText: string): string | Record<string, unknown> {
+    if (!responseText.trim()) {
+      throw new Error('Failed to parse imported recipe')
+    }
+
+    try {
+      return JSON.parse(responseText) as string | Record<string, unknown>
+    } catch {
+      return responseText
+    }
+  }
+
+  private summarizeResponseBody(responseText: string): unknown {
+    try {
+      return JSON.parse(responseText) as unknown
+    } catch {
+      return responseText.slice(0, 400)
+    }
+  }
+
+  private formatRecipeImportError(status: number, responseText: string): string {
+    const parsed = this.summarizeResponseBody(responseText)
+
+    const validationMessage = this.extractMeaningfulErrorMessage(parsed)
+    if (status === 422 && validationMessage) {
+      return `Recipe import failed: ${validationMessage}`
+    }
+
+    if (status === 401) {
+      return 'Mealie authentication failed. Please sign in again.'
+    }
+
+    if (status === 403) {
+      return 'Mealie rejected the recipe import: you do not have permission to import recipes.'
+    }
+
+    if (status === 422) {
+      return 'Mealie rejected the recipe import. Please enter a valid recipe URL.'
+    }
+
+    if (status === 403 && validationMessage) {
+      return `Mealie rejected the recipe import: ${validationMessage}`
+    }
+
+    if (status >= 500 && validationMessage) {
+      return `Mealie could not extract a recipe from this website: ${validationMessage}`
+    }
+
+    if (status >= 500) {
+      return 'Mealie could not extract a recipe from this website.'
+    }
+
+    return `Recipe import failed (server returned ${status}).`
+  }
+
+  private extractMeaningfulErrorMessage(payload: unknown): string | undefined {
+    if (typeof payload === 'string' && payload.trim()) {
+      return payload.trim()
+    }
+
+    if (!payload || typeof payload !== 'object') return undefined
+
+    const detail = (payload as { detail?: unknown }).detail
+    if (Array.isArray(detail)) {
+      const messages = detail
+        .map((item) => {
+          if (!item || typeof item !== 'object') return undefined
+          const message = (item as { msg?: unknown }).msg
+          return typeof message === 'string' ? message : undefined
+        })
+        .filter((value): value is string => Boolean(value))
+
+      if (messages.length > 0) {
+        return messages.join('; ')
+      }
+    }
+
+    const message = (payload as { message?: unknown }).message
+    if (typeof message === 'string' && message.trim()) {
+      return message.trim()
+    }
+
+    return undefined
   }
 
   async getCategories(): Promise<MealieCategory[]> {
