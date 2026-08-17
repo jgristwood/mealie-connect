@@ -191,6 +191,14 @@ button {
   gap: 6px;
 }
 
+.brand-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .main-nav {
   display: flex;
   gap: 10px;
@@ -252,9 +260,7 @@ button {
 }
 
 .header-settings-button {
-  position: absolute;
-  top: 16px;
-  right: 52px;
+  position: static;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -267,6 +273,7 @@ button {
   font-size: 0.82rem;
   font-weight: 700;
   letter-spacing: 0.02em;
+  text-decoration: none;
   transition: background var(--ease), border-color var(--ease), transform var(--ease);
 }
 
