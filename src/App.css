@@ -191,15 +191,6 @@ button {
   gap: 6px;
 }
 
-.brand-row {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  flex-wrap: nowrap;
-  width: min(100%, 420px);
-}
-
 .main-nav {
   display: flex;
   gap: 10px;
@@ -261,7 +252,9 @@ button {
 }
 
 .header-settings-button {
-  position: static;
+  position: absolute;
+  top: 16px;
+  left: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -761,25 +754,13 @@ button {
   text-align: center;
 }
 
-@media (max-width: 480px) {
-  .brand-row {
-    gap: 8px;
-    width: 100%;
-  }
-
+@media (max-width: 640px) {
   .header-settings-button {
+    position: static;
+    margin-right: auto;
     min-height: 32px;
     padding: 0 10px;
     font-size: 0.74rem;
-  }
-
-  .brand-lockup.compact {
-    font-size: 0.96rem;
-  }
-
-  .brand-lockup.compact .brand-logo {
-    width: 58px;
-    height: 58px;
   }
 }
 

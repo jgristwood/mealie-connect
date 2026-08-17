@@ -46,20 +46,10 @@ function AppHeader({ activeProfile, showHomeButton = true }: { activeProfile: Me
   return (
     <header className="app-header">
       <div className="brand-cluster">
-        {activeProfile && !isSettingsPage ? (
-          <div className="brand-row">
-            <Link className="header-settings-button" to="/settings" aria-label="Open settings">Settings</Link>
-            <Link className="brand-lockup compact" to="/" aria-label="Mealie Connect home">
-              <img className="brand-logo" src="/mealie-connect-logo.svg" alt="" />
-              <span>Mealie Connect</span>
-            </Link>
-          </div>
-        ) : (
-          <Link className="brand-lockup compact" to="/" aria-label="Mealie Connect home">
-            <img className="brand-logo" src="/mealie-connect-logo.svg" alt="" />
-            <span>Mealie Connect</span>
-          </Link>
-        )}
+        <Link className="brand-lockup compact" to="/" aria-label="Mealie Connect home">
+          <img className="brand-logo" src="/mealie-connect-logo.svg" alt="" />
+          <span>Mealie Connect</span>
+        </Link>
         {activeProfile ? (
           <Link className="header-profile-link" to="/setup">
             <span className="account-dot" aria-hidden="true" />
@@ -75,6 +65,9 @@ function AppHeader({ activeProfile, showHomeButton = true }: { activeProfile: Me
           <Link to="/meal-plan">Meal plan</Link>
           <Link to="/shopping">Shopping list</Link>
         </nav>
+      ) : null}
+      {activeProfile && !isSettingsPage ? (
+        <Link className="header-settings-button" to="/settings" aria-label="Open settings">Settings</Link>
       ) : null}
       <Link className="header-import-button" to="/import" aria-label="Import a recipe" title="Import a recipe">+</Link>
     </header>
