@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } fro
 import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { authService } from './services/auth/auth-service'
 import { MealieClient } from './services/mealie/mealie-client'
+import defaultRecipeImage from './assets/default-image.jpg'
 import type {
   AuthMethod,
   MealieCategory,
@@ -338,8 +339,8 @@ function HomePage({
               <p className="empty-copy">No recipes are available yet. Connect a Mealie account and sync your library.</p>
             ) : null}
             <div className="recipe-grid home-recipe-grid">
-              {overview.map((recipe, index) => (
-                <Link key={recipe.id} className={index === 0 ? 'recipe-card recipe-card-featured' : 'recipe-card'} to={`/recipes/${recipe.slug || recipe.id}`}>
+              {overview.map((recipe) => (
+                <Link key={recipe.id} className="recipe-card" to={`/recipes/${recipe.slug || recipe.id}`}>
                   <RecipeThumbnail activeProfile={activeProfile} recipe={recipe} />
                   <div className="recipe-card-body">
                     <p className="recipe-card-kicker">{recipe.categories?.[0]?.name ?? 'From your collection'}</p>
@@ -726,11 +727,8 @@ function RecipesPage({
   }, [hasMore, onLoadMore])
 
   useEffect(() => {
-    const updateScrollState = () => setShowBackToTop(window.scrollY > 480)
-    updateScrollState()
-    window.addEventListener('scroll', updateScrollState, { passive: true })
-    return () => window.removeEventListener('scroll', updateScrollState)
-  }, [])
+    setShowBackToTop(recipes.length >= RECIPES_PAGE_SIZE * 2)
+  }, [recipes.length])
 
   const toggleCategory = (id: string) => {
     setSelectedCategories(
@@ -939,11 +937,7 @@ function RecipeThumbnail({
     }
   }, [activeProfile, recipe])
 
-  return imageUrl ? (
-    <img className={className} src={imageUrl} alt="" />
-  ) : (
-    <div className={`${className} placeholder`} aria-hidden="true"><span>No image</span></div>
-  )
+  return <img className={className} src={imageUrl || defaultRecipeImage} alt="" />
 }
 
 function RecipeDetailPage({ activeProfile }: { activeProfile: MealieProfile | null }) {
@@ -1009,10 +1003,8 @@ function RecipeDetailPage({ activeProfile }: { activeProfile: MealieProfile | nu
 
       {recipe ? (
         <>
-          <section className={`detail-hero${imageUrl ? ' with-image' : ''}`}>
-            {imageUrl ? (
-              <img className="detail-image" src={imageUrl} alt={recipe.name} />
-            ) : null}
+          <section className="detail-hero with-image">
+            <img className="detail-image" src={imageUrl || defaultRecipeImage} alt={imageUrl ? recipe.name : ''} />
             <div className="detail-summary">
               <p className="eyebrow">Recipe detail</p>
               <h2>{recipe.name}</h2>
