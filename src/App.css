@@ -9,6 +9,7 @@
   --text: #2b252b;
   --muted: #746c6d;
   --border: #ded5ca;
+  --border-strong: #c9beb0;
   --danger: #a33c3c;
   --success: #32745a;
   --shadow: 0 10px 28px rgba(75, 54, 45, 0.07);
@@ -17,6 +18,96 @@
   --radius-md: 12px;
   --radius-lg: 18px;
   --ease: 180ms ease;
+}
+
+/* Purple is the original Mealie Connect identity and remains the explicit
+   default; the :root block above already matches it, this selector exists
+   so switching back to it after another theme works identically. */
+:root[data-theme='purple'] {
+  --background: #f7f3ed;
+  --surface: #fffdf9;
+  --surface-muted: #eee8df;
+  --primary: #713a72;
+  --primary-strong: #4c234f;
+  --accent: #c87945;
+  --accent-soft: #f3e1cf;
+  --text: #2b252b;
+  --muted: #746c6d;
+  --border: #ded5ca;
+  --border-strong: #c9beb0;
+  --danger: #a33c3c;
+  --success: #32745a;
+  --shadow: 0 10px 28px rgba(75, 54, 45, 0.07);
+}
+
+:root[data-theme='blue'] {
+  --background: #f2f5fa;
+  --surface: #ffffff;
+  --surface-muted: #e7edf6;
+  --primary: #2f5fae;
+  --primary-strong: #1f3f78;
+  --accent: #3c8f8c;
+  --accent-soft: #dcecea;
+  --text: #202634;
+  --muted: #626d81;
+  --border: #d3ddec;
+  --border-strong: #b7c6dd;
+  --danger: #b3403a;
+  --success: #2a7a56;
+  --shadow: 0 10px 28px rgba(31, 63, 120, 0.08);
+}
+
+:root[data-theme='red'] {
+  --background: #faf3f1;
+  --surface: #ffffff;
+  --surface-muted: #f3e4e0;
+  --primary: #b1443b;
+  --primary-strong: #7c2a24;
+  --accent: #c87945;
+  --accent-soft: #f3e1cf;
+  --text: #2b201f;
+  --muted: #7a6764;
+  --border: #e6d2cc;
+  --border-strong: #d6b7ae;
+  /* Destructive/error styling stays a distinct, cooler red so it remains
+     visually separable from the red theme's warmer primary accent. */
+  --danger: #8f2f2f;
+  --success: #32745a;
+  --shadow: 0 10px 28px rgba(124, 42, 36, 0.08);
+}
+
+:root[data-theme='green'] {
+  --background: #f3f7f2;
+  --surface: #ffffff;
+  --surface-muted: #e6efe3;
+  --primary: #3d7a53;
+  --primary-strong: #275337;
+  --accent: #c8843f;
+  --accent-soft: #f1e3cf;
+  --text: #212a20;
+  --muted: #647163;
+  --border: #d6e3d1;
+  --border-strong: #bcd0b6;
+  --danger: #a33c3c;
+  --success: #2f7a4f;
+  --shadow: 0 10px 28px rgba(39, 83, 55, 0.08);
+}
+
+:root[data-theme='dark'] {
+  --background: #17151a;
+  --surface: #201d24;
+  --surface-muted: #29252f;
+  --primary: #a875ab;
+  --primary-strong: #c894cc;
+  --accent: #d99a68;
+  --accent-soft: #3a2f30;
+  --text: #efe9f2;
+  --muted: #a89fae;
+  --border: #38343e;
+  --border-strong: #4a4552;
+  --danger: #e08585;
+  --success: #6ec6a1;
+  --shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
 }
 
 @keyframes page-enter {
@@ -43,6 +134,18 @@ body,
   background: var(--background);
   color: var(--text);
   font-family: 'Avenir Next', 'Segoe UI', sans-serif;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 body {
@@ -2303,7 +2406,17 @@ select:focus {
 }
 
 .danger-action {
+  background: rgba(164, 52, 90, 0.12);
+  border-color: rgba(164, 52, 90, 0.28);
   color: var(--danger);
+}
+
+.danger-action:hover {
+  background: rgba(164, 52, 90, 0.18);
+  border-color: rgba(164, 52, 90, 0.42);
+  color: var(--danger);
+  padding-left: 20px;
+  padding-right: 20px;
 }
 
 .compact-empty {
@@ -2779,4 +2892,631 @@ select:focus {
     font-size: 1.2rem;
     white-space: nowrap;
   }
+}
+
+/* ==========================================================================
+   Dinner Roulette, meal-plan grouping, shared modals, and theme menu
+   ========================================================================== */
+
+.home-feature.roulette-feature {
+  border: 1px solid var(--border);
+  background: linear-gradient(135deg, var(--accent-soft), var(--surface));
+}
+
+.home-feature.roulette-feature .feature-copy .eyebrow,
+.home-feature.roulette-feature .feature-copy h2 {
+  color: var(--text);
+}
+
+.home-feature.roulette-feature .feature-copy p:not(.eyebrow) {
+  color: var(--muted);
+}
+
+.home-feature.roulette-feature .feature-copy .primary-button {
+  background: var(--primary);
+  color: white;
+}
+
+.home-feature.roulette-feature .feature-copy .primary-button:hover {
+  background: var(--primary-strong);
+}
+
+.roulette-feature .feature-emoji {
+  font-size: 2.4rem;
+  line-height: 1;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.account-details-theme {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.theme-menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.theme-swatch-button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.theme-swatch-button:hover {
+  border-color: var(--primary);
+}
+
+.theme-swatch-button.active {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+  font-weight: 600;
+}
+
+.theme-swatch-dot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  flex-shrink: 0;
+}
+
+/* Dinner Roulette page */
+
+.roulette-shell {
+  max-width: 720px;
+}
+
+.roulette-filters {
+  display: grid;
+  gap: 20px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+.roulette-filter-group {
+  display: grid;
+  gap: 8px;
+}
+
+.roulette-filter-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.roulette-filter-group-header label,
+.roulette-filter-group-header span {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.roulette-time-options,
+.roulette-tag-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.roulette-chip {
+  border: 1px solid var(--border);
+  background: var(--surface-muted);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.roulette-chip:hover {
+  border-color: var(--primary);
+}
+
+.roulette-chip.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: white;
+}
+
+.roulette-custom-time {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.roulette-custom-time input {
+  width: 90px;
+}
+
+.roulette-ingredient-input {
+  display: flex;
+  gap: 8px;
+}
+
+.roulette-ingredient-input input {
+  flex: 1;
+}
+
+.roulette-ingredient-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.roulette-ingredient-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--accent-soft);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 5px 8px 5px 14px;
+  font-size: 0.85rem;
+}
+
+.roulette-ingredient-chip button {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 2px;
+}
+
+.roulette-ingredient-mode {
+  display: flex;
+  gap: 16px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.roulette-roll-section {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  margin: 24px 0;
+}
+
+.roulette-roll-button {
+  font-size: 1.15rem;
+  padding: 16px 40px;
+  border-radius: 999px;
+  border: none;
+  background: var(--primary);
+  color: white;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.roulette-roll-button:hover:not(:disabled) {
+  background: var(--primary-strong);
+  transform: translateY(-1px);
+}
+
+.roulette-roll-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.roulette-dice {
+  display: inline-block;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .roulette-dice.rolling {
+    animation: roulette-spin 0.5s ease;
+  }
+}
+
+@keyframes roulette-spin {
+  0% { transform: rotate(0deg) scale(1); }
+  50% { transform: rotate(180deg) scale(1.2); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+
+.roulette-no-results {
+  border: 1px dashed var(--border-strong);
+  border-radius: 14px;
+  padding: 24px;
+  text-align: center;
+  display: grid;
+  gap: 16px;
+}
+
+.roulette-current-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.roulette-clear-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+}
+
+.roulette-result {
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 28px;
+  text-align: center;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  display: grid;
+  gap: 16px;
+}
+
+.roulette-result h2 {
+  font-size: 1.6rem;
+}
+
+.roulette-result-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.roulette-result-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-top: 8px;
+}
+
+@media (max-width: 560px) {
+  .roulette-result-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Shared modals (Add to Meal Plan / Add Ingredients to Shopping List / Recipe Picker) */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(31, 20, 33, 0.45);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  z-index: 100;
+}
+
+.modal-panel {
+  background: var(--surface);
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  padding: 28px;
+  width: 100%;
+  max-width: 460px;
+  max-height: 85vh;
+  overflow-y: auto;
+  display: grid;
+  gap: 14px;
+}
+
+.modal-panel h3 {
+  font-size: 1.2rem;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.shopping-target-picker {
+  display: grid;
+  gap: 10px;
+}
+
+.recipe-picker-panel {
+  max-width: 560px;
+}
+
+.recipe-picker-filters {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 480px) {
+  .recipe-picker-filters {
+    grid-template-columns: 1.5fr 1fr 1fr;
+  }
+}
+
+.recipe-picker-results {
+  display: grid;
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.recipe-picker-result {
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface-muted);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.recipe-picker-result:hover,
+.recipe-picker-result:focus-visible {
+  border-color: var(--primary);
+}
+
+.recipe-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+/* Meal planner: view switcher, day/week/month layouts, grouped meal slots */
+
+.meal-plan-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.view-switcher {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px;
+  background: var(--surface);
+}
+
+.view-switcher-button {
+  border: none;
+  background: transparent;
+  color: var(--text);
+  padding: 6px 16px;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.view-switcher-button.active {
+  background: var(--primary);
+  color: white;
+}
+
+.date-nav {
+  display: flex;
+  gap: 8px;
+}
+
+.meal-slot-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  background: var(--surface);
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.meal-slot-heading {
+  font-size: 1rem;
+  color: var(--primary);
+}
+
+.meal-slot-empty {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.meal-slot-recipe-list {
+  display: grid;
+  gap: 8px;
+}
+
+.meal-slot-recipe {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+
+.meal-slot-recipe:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.meal-slot-recipe-name {
+  font-weight: 500;
+}
+
+.meal-slot-recipe-actions {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.small-link {
+  font-size: 0.82rem;
+}
+
+.add-recipe-button {
+  justify-self: start;
+}
+
+.meal-plan-day-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.meal-plan-day-date {
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.meal-plan-day-slots {
+  display: grid;
+  gap: 16px;
+}
+
+@media (min-width: 720px) {
+  .meal-plan-day-slots {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+.meal-plan-week-view {
+  display: grid;
+  gap: 20px;
+}
+
+@media (min-width: 960px) {
+  .meal-plan-week-view {
+    grid-template-columns: repeat(7, 1fr);
+  }
+}
+
+.meal-plan-week-day {
+  display: grid;
+  gap: 10px;
+}
+
+.meal-plan-week-day-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 6px 0;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.meal-plan-week-day-number {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.meal-plan-week-day-slots {
+  display: grid;
+  gap: 12px;
+}
+
+.meal-plan-month-heading {
+  margin-bottom: 16px;
+}
+
+.meal-plan-month-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+
+.meal-plan-month-weekday {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-bottom: 4px;
+}
+
+.meal-plan-month-cell {
+  min-height: 84px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px;
+  background: var(--surface);
+  text-align: left;
+  display: grid;
+  gap: 4px;
+  align-content: start;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 0.75rem;
+}
+
+.meal-plan-month-cell:hover {
+  border-color: var(--primary);
+}
+
+.meal-plan-month-cell.empty {
+  background: transparent;
+  border: none;
+  cursor: default;
+}
+
+.meal-plan-month-day-number {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.meal-plan-month-summary {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .meal-plan-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .date-nav {
+    justify-content: space-between;
+  }
+
+  .roulette-result-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+.empty-copy {
+  color: var(--muted);
+  font-size: 0.85rem;
 }

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { MealieClient } from './mealie-client'
+import { MealieClient, groupMealPlanEntriesIntoSlots, parseMealieTimeToMinutes } from './mealie-client'
 
 const jsonResponse = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -86,8 +86,125 @@ describe('MealieClient', () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe('http://mealie.test/api/households/shopping/items')
     expect(fetchMock.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
       method: 'POST',
-      body: JSON.stringify({ food: 'Tomatoes', shoppingListId: 'list-1' }),
+      body: JSON.stringify({
+        shoppingListId: 'list-1',
+        quantity: 1,
+        unit: null,
+        food: { name: 'Tomatoes' },
+        note: null,
+        display: 'Tomatoes',
+      }),
     }))
     expect(fetchMock.mock.calls[1]?.[0]).toBe('http://mealie.test/api/households/shopping/lists/list-1')
+  })
+
+  it('filters recipes by max prep/cook time client-side', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      jsonResponse([
+        { id: '1', name: 'Quick soup', prepTime: 'PT10M', cookTime: 'PT15M' },
+        { id: '2', name: 'Slow roast', prepTime: 'PT30M', cookTime: 'PT120M' },
+      ]),
+    )
+    const client = new MealieClient({ baseUrl: 'http://mealie.test', token: 'token' })
+
+    await expect(client.getRecipes({ maxPrepTime: 20, maxCookTime: 30 })).resolves.toEqual([
+      { id: '1', name: 'Quick soup', prepTime: 'PT10M', cookTime: 'PT15M' },
+    ])
+  })
+
+  it('getAllRecipes pages through the full result set', async () => {
+    const page1 = Array.from({ length: 100 }, (_, index) => ({ id: `r${index}`, name: `Recipe ${index}` }))
+    const page2 = [{ id: 'r100', name: 'Recipe 100' }]
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(page1))
+      .mockResolvedValueOnce(jsonResponse(page2))
+    const client = new MealieClient({ baseUrl: 'http://mealie.test', token: 'token' })
+
+    const all = await client.getAllRecipes()
+    expect(all).toHaveLength(101)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('adds a recipe’s ingredients to a shopping list through the recipe endpoint', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({ ok: true }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'list-1', name: 'Weekly', items: [{ id: 'item-1' }] }))
+    const client = new MealieClient({ baseUrl: 'http://mealie.test', token: 'token' })
+
+    const result = await client.addRecipeIngredientsToShoppingList('list-1', 'recipe-1')
+
+    expect(result).toMatchObject({ id: 'list-1', name: 'Weekly' })
+    expect(fetchMock.mock.calls[0]?.[1]).toEqual(expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ recipeIncrementQuantity: 1 }),
+    }))
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('http://mealie.test/api/households/shopping/lists/list-1/recipe/recipe-1')
+  })
+
+  it('removes all items from a shopping list by deleting each item then refreshing', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(jsonResponse({}))
+      .mockResolvedValueOnce(jsonResponse({ id: 'list-1', name: 'Weekly', items: [] }))
+    const client = new MealieClient({ baseUrl: 'http://mealie.test', token: 'token' })
+
+    await expect(client.removeAllFromShoppingList('list-1', ['item-1', 'item-2'])).resolves.toMatchObject({
+      id: 'list-1',
+      items: [],
+    })
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('http://mealie.test/api/households/shopping/items/item-1')
+    expect(fetchMock.mock.calls[1]?.[0]).toBe('http://mealie.test/api/households/shopping/items/item-2')
+    expect(fetchMock.mock.calls[2]?.[0]).toBe('http://mealie.test/api/households/shopping/lists/list-1')
+  })
+})
+
+describe('parseMealieTimeToMinutes', () => {
+  it('parses ISO 8601 durations', () => {
+    expect(parseMealieTimeToMinutes('PT1H30M')).toBe(90)
+    expect(parseMealieTimeToMinutes('PT20M')).toBe(20)
+  })
+
+  it('parses plain numeric strings and numbers', () => {
+    expect(parseMealieTimeToMinutes('45')).toBe(45)
+    expect(parseMealieTimeToMinutes(15)).toBe(15)
+  })
+
+  it('returns undefined for empty/invalid values', () => {
+    expect(parseMealieTimeToMinutes(undefined)).toBeUndefined()
+    expect(parseMealieTimeToMinutes('')).toBeUndefined()
+    expect(parseMealieTimeToMinutes('not-a-time')).toBeUndefined()
+  })
+})
+
+describe('groupMealPlanEntriesIntoSlots', () => {
+  it('groups multiple recipes into a single date + meal-type slot', () => {
+    const entries = [
+      { id: '1', date: '2026-08-17', entryType: 'dinner', recipe: { name: 'Chicken Parmesan' } },
+      { id: '2', date: '2026-08-17', entryType: 'dinner', recipe: { name: 'Garlic Bread' } },
+      { id: '3', date: '2026-08-17', entryType: 'breakfast', recipe: { name: 'Pancakes' } },
+    ] as never
+
+    const slots = groupMealPlanEntriesIntoSlots(entries)
+    expect(slots).toHaveLength(2)
+
+    const dinnerSlot = slots.find((slot) => slot.entryType === 'dinner')
+    expect(dinnerSlot?.entries).toHaveLength(2)
+    expect(dinnerSlot?.entries.map((entry) => entry.recipe?.name)).toEqual(['Chicken Parmesan', 'Garlic Bread'])
+
+    const breakfastSlot = slots.find((slot) => slot.entryType === 'breakfast')
+    expect(breakfastSlot?.entries).toHaveLength(1)
+  })
+
+  it('keeps removing one entry from not affecting other entries in the same slot', () => {
+    const entries = [
+      { id: '1', date: '2026-08-17', entryType: 'dinner', recipe: { name: 'Chicken Parmesan' } },
+      { id: '2', date: '2026-08-17', entryType: 'dinner', recipe: { name: 'Garlic Bread' } },
+      { id: '3', date: '2026-08-17', entryType: 'dinner', recipe: { name: 'Caesar Salad' } },
+    ]
+
+    const withoutGarlicBread = entries.filter((entry) => entry.id !== '2')
+    const slots = groupMealPlanEntriesIntoSlots(withoutGarlicBread as never)
+    expect(slots[0]?.entries.map((entry) => entry.recipe?.name)).toEqual(['Chicken Parmesan', 'Caesar Salad'])
   })
 })

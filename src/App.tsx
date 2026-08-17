@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { authService } from './services/auth/auth-service'
-import { MealieClient } from './services/mealie/mealie-client'
+import { MealieClient, groupMealPlanEntriesIntoSlots, type MealPlanSlot } from './services/mealie/mealie-client'
+import { THEMES, getStoredTheme, setTheme as persistTheme } from './lib/theme'
 import defaultRecipeImage from './assets/default-image.jpg'
 import type {
   AuthMethod,
@@ -13,10 +14,18 @@ import type {
   MealieShoppingList,
   MealieTag,
   MealieWeekPlan,
+  PlannableMealType,
+  ThemeName,
 } from './types/mealie'
+import { PLANNABLE_MEAL_TYPES } from './types/mealie'
 import './App.css'
 
 const RECIPES_PAGE_SIZE = 50
+const MEAL_TYPE_LABELS: Record<string, string> = {
+  breakfast: 'Breakfast',
+  lunch: 'Lunch',
+  dinner: 'Dinner',
+}
 
 const normalizeInstructionSteps = (recipe: MealieRecipeDetail): MealieInstructionStep[] => {
   if (Array.isArray((recipe as MealieRecipeDetail & { steps?: MealieInstructionStep[] }).steps)) {
@@ -49,12 +58,40 @@ function AppHeader({ activeProfile, showHomeButton = true }: { activeProfile: Me
         <nav className={showHomeButton ? 'main-nav has-home' : 'main-nav'} aria-label="Primary navigation">
           {showHomeButton ? <Link to="/">Home</Link> : null}
           <Link to="/recipes">Recipes</Link>
+          <Link to="/roulette">Dinner Roulette</Link>
           <Link to="/meal-plan">Meal plan</Link>
           <Link to="/shopping">Shopping list</Link>
         </nav>
       ) : null}
       <Link className="header-import-button" to="/import" aria-label="Import a recipe" title="Import a recipe">+</Link>
     </header>
+  )
+}
+
+function ThemeMenu() {
+  const [current, setCurrent] = useState<ThemeName>(() => getStoredTheme())
+
+  const choose = (theme: ThemeName) => {
+    persistTheme(theme)
+    setCurrent(theme)
+  }
+
+  return (
+    <div className="theme-menu" role="group" aria-label="Choose a color theme">
+      {THEMES.map((theme) => (
+        <button
+          key={theme.id}
+          type="button"
+          className={`theme-swatch-button${current === theme.id ? ' active' : ''}`}
+          onClick={() => choose(theme.id)}
+          aria-pressed={current === theme.id}
+          title={theme.label}
+        >
+          <span className="theme-swatch-dot" style={{ backgroundColor: theme.swatch }} aria-hidden="true" />
+          <span>{theme.label}</span>
+        </button>
+      ))}
+    </div>
   )
 }
 
@@ -68,7 +105,7 @@ function ScrollToTop() {
   return null
 }
 
-function SectionHeading({ eyebrow, title, action }: { eyebrow?: string; title: string; action?: React.ReactNode }) {
+function SectionHeading({ eyebrow, title, action }: { eyebrow?: string; title: string; action?: ReactNode }) {
   return (
     <div className="section-heading">
       <div>
@@ -277,12 +314,12 @@ function App() {
           element={<MealPlanPage activeProfile={activeProfile} />}
         />
         <Route
-          path="/meal-plan/:id"
-          element={<MealPlanDetailPage activeProfile={activeProfile} />}
+          path="/random-recipe"
+          element={<RouletteRedirect />}
         />
         <Route
-          path="/random-recipe"
-          element={<RandomRecipePage activeProfile={activeProfile} />}
+          path="/roulette"
+          element={<DinnerRoulettePage activeProfile={activeProfile} />}
         />
       </Routes>
     </BrowserRouter>
@@ -322,12 +359,12 @@ function HomePage({
 
       {activeProfile ? (
         <>
-          <section className="home-feature">
+          <section className="home-feature roulette-feature">
             <div className="feature-copy">
-              <p className="eyebrow">Start with a little inspiration</p>
-              <h2>Discover something worth making.</h2>
-              <p>Take the decision out of dinner with a recipe chosen from your own collection.</p>
-              <Link className="primary-button" to="/random-recipe">Discover a recipe</Link>
+              <p className="eyebrow">What should I cook?</p>
+              <h2>🎲 Dinner Roulette</h2>
+              <p>Don&rsquo;t know what to cook? Let Dinner Roulette choose. Roll completely at random, or narrow it down by category, time, tags, and what&rsquo;s already in your kitchen.</p>
+              <Link className="primary-button" to="/roulette">Roll the Dice</Link>
             </div>
             <div className="feature-rule" aria-hidden="true" />
           </section>
@@ -379,6 +416,10 @@ function HomePage({
           <div className="account-details-body">
             <div><strong>{activeProfile.displayName ?? activeProfile.username ?? 'Mealie user'}</strong><span>{activeProfile.server}</span></div>
             <div className="profile-list">{profiles.map((profile) => <button key={profile.id} type="button" className={`profile-item ${activeProfile.id === profile.id ? 'active' : ''}`} onClick={() => onSelectProfile(profile)}>{profile.displayName ?? profile.username ?? profile.name}</button>)}</div>
+            <div className="account-details-theme">
+              <p className="eyebrow">Appearance</p>
+              <ThemeMenu />
+            </div>
             <button type="button" className="text-button danger-text" onClick={onSignOut}>Sign out</button>
           </div>
         </details>
@@ -769,7 +810,7 @@ function RecipesPage({
             <p className="eyebrow">Recipe library</p>
             <h1>Find something to cook.</h1>
             <p className="intro-copy">Search the recipes you have gathered, saved, and loved.</p>
-            <Link className="secondary-button page-intro-action" to="/random-recipe">Random recipe</Link>
+            <Link className="secondary-button page-intro-action" to="/roulette">🎲 Dinner Roulette</Link>
           </section>
 
           <section className="library-controls">
@@ -946,6 +987,8 @@ function RecipeDetailPage({ activeProfile }: { activeProfile: MealieProfile | nu
   const [imageUrl, setImageUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [showShoppingModal, setShowShoppingModal] = useState(false)
+  const [showMealPlanModal, setShowMealPlanModal] = useState(false)
 
   useEffect(() => {
     if (!activeProfile || !slug) {
@@ -1016,6 +1059,10 @@ function RecipeDetailPage({ activeProfile }: { activeProfile: MealieProfile | nu
                 {recipe.cookTime ? <span>{recipe.cookTime} cook</span> : null}
                 {recipe.servings ? <span>{recipe.servings} servings</span> : null}
               </div>
+              <div className="recipe-detail-actions">
+                <button type="button" className="secondary-button" onClick={() => setShowShoppingModal(true)}>Add Ingredients to Shopping List</button>
+                <button type="button" className="secondary-button" onClick={() => setShowMealPlanModal(true)}>Add to Meal Plan</button>
+              </div>
             </div>
           </section>
 
@@ -1053,6 +1100,23 @@ function RecipeDetailPage({ activeProfile }: { activeProfile: MealieProfile | nu
             </div>
           </section>
         </>
+      ) : null}
+
+      {recipe && showShoppingModal && activeProfile ? (
+        <AddIngredientsToShoppingListModal
+          activeProfile={activeProfile}
+          recipeId={recipe.id}
+          recipeName={recipe.name}
+          onClose={() => setShowShoppingModal(false)}
+        />
+      ) : null}
+
+      {recipe && showMealPlanModal && activeProfile ? (
+        <AddToMealPlanModal
+          activeProfile={activeProfile}
+          recipe={recipe}
+          onClose={() => setShowMealPlanModal(false)}
+        />
       ) : null}
     </main>
   )
@@ -1362,6 +1426,26 @@ function ShoppingListDetailPage({ activeProfile }: { activeProfile: MealieProfil
     }
   }
 
+  const removeAllItems = async () => {
+    if (!activeProfile || !list) return
+
+    const itemIds = (list.items ?? []).map((item) => item.id).filter((itemId): itemId is string => Boolean(itemId))
+    if (itemIds.length === 0) return
+
+    const client = new MealieClient({
+      baseUrl: activeProfile.server,
+      token: activeProfile.token,
+    })
+
+    setError('')
+    try {
+      const updated = await client.removeAllFromShoppingList(list.id, itemIds)
+      setList(updated)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to remove all items.')
+    }
+  }
+
   return (
     <main className="app-shell detail-shell">
       <AppHeader activeProfile={activeProfile} />
@@ -1420,7 +1504,17 @@ function ShoppingListDetailPage({ activeProfile }: { activeProfile: MealieProfil
           </section>
 
           <section className="content-section shopping-content-section">
-            <SectionHeading eyebrow={`${(list.items ?? []).length} to gather`} title="Items" />
+            <SectionHeading
+              eyebrow={`${(list.items ?? []).length} to gather`}
+              title="Items"
+              action={
+                (list.items ?? []).length > 0 ? (
+                  <button type="button" className="secondary-button danger-action" onClick={() => void removeAllItems()}>
+                    Remove All
+                  </button>
+                ) : undefined
+              }
+            />
             <div className="instruction-list">
               {(list.items ?? []).length > 0 ? (
                 (list.items ?? []).map((item, index) => (
@@ -1455,61 +1549,142 @@ function ShoppingListDetailPage({ activeProfile }: { activeProfile: MealieProfil
   )
 }
 
+const DAY_MS = 24 * 60 * 60 * 1000
+
+function toDateKey(date: Date): string {
+  return date.toISOString().split('T')[0]
+}
+
+function parseDateKey(key: string): Date {
+  const [year, month, day] = key.split('-').map(Number)
+  return new Date(year, (month ?? 1) - 1, day ?? 1)
+}
+
+function startOfWeek(date: Date): Date {
+  const result = new Date(date)
+  const day = result.getDay()
+  result.setDate(result.getDate() - day)
+  result.setHours(0, 0, 0, 0)
+  return result
+}
+
+function startOfMonth(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), 1)
+}
+
+type MealPlanView = 'day' | 'week' | 'month'
+
+const MEAL_PLAN_VIEW_KEY = 'mealie-connect-meal-plan-view'
+
+function getStoredMealPlanView(): MealPlanView {
+  if (typeof window === 'undefined') return 'week'
+  const stored = window.localStorage.getItem(MEAL_PLAN_VIEW_KEY)
+  return stored === 'day' || stored === 'week' || stored === 'month' ? stored : 'week'
+}
+
 function MealPlanPage({ activeProfile }: { activeProfile: MealieProfile | null }) {
-  const [plans, setPlans] = useState<MealieWeekPlan[]>([])
+  const [view, setView] = useState<MealPlanView>(() => getStoredMealPlanView())
+  const [anchorDate, setAnchorDate] = useState(() => new Date())
+  const [entries, setEntries] = useState<MealieWeekPlan[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [entryDate, setEntryDate] = useState(new Date().toISOString().split('T')[0])
-  const [entryType, setEntryType] = useState('dinner')
-  const [entryTitle, setEntryTitle] = useState('')
-  const [entryText, setEntryText] = useState('')
+  const [pickerTarget, setPickerTarget] = useState<{ date: string; mealType: PlannableMealType; replaceEntryId?: string } | null>(null)
 
   useEffect(() => {
+    window.localStorage.setItem(MEAL_PLAN_VIEW_KEY, view)
+  }, [view])
+
+  const { rangeStart, rangeEnd } = useMemo(() => {
+    if (view === 'day') {
+      return { rangeStart: new Date(anchorDate), rangeEnd: new Date(anchorDate) }
+    }
+    if (view === 'week') {
+      const start = startOfWeek(anchorDate)
+      const end = new Date(start.getTime() + 6 * DAY_MS)
+      return { rangeStart: start, rangeEnd: end }
+    }
+    const start = startOfMonth(anchorDate)
+    const end = new Date(start.getFullYear(), start.getMonth() + 1, 0)
+    return { rangeStart: start, rangeEnd: end }
+  }, [view, anchorDate])
+
+  const loadEntries = useCallback(() => {
     if (!activeProfile) {
-      setPlans([])
+      setEntries([])
       return
     }
 
-    const client = new MealieClient({
-      baseUrl: activeProfile.server,
-      token: activeProfile.token,
-    })
-
+    const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
     setLoading(true)
     setError('')
 
-    const today = new Date()
-    const startDate = today.toISOString().split('T')[0]
-    const endDate = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-
     client
-      .getMealPlans(startDate, endDate)
-      .then((nextPlans) => setPlans(nextPlans))
+      .getMealPlans(toDateKey(rangeStart), toDateKey(rangeEnd))
+      .then((nextEntries) => setEntries(nextEntries))
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
-  }, [activeProfile])
+  }, [activeProfile, rangeStart, rangeEnd])
 
-  const createEntry = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (!activeProfile || !entryDate) return
+  useEffect(() => {
+    loadEntries()
+  }, [loadEntries])
 
+  const slots = useMemo(() => groupMealPlanEntriesIntoSlots(entries), [entries])
+
+  const slotsFor = useCallback(
+    (dateKey: string, mealType: PlannableMealType) =>
+      slots.find((slot) => slot.date === dateKey && slot.entryType === mealType)?.entries ?? [],
+    [slots],
+  )
+
+  const removeEntry = async (entryId: string) => {
+    if (!activeProfile) return
     const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
     setError('')
-
     try {
-      const entry = await client.createMealPlanEntry({
-        date: entryDate,
-        entryType,
-        title: entryTitle.trim() || undefined,
-        text: entryText.trim() || undefined,
-      })
-      setPlans((current) => [entry, ...current])
-      setEntryTitle('')
-      setEntryText('')
+      await client.deleteMealPlanEntry(entryId)
+      setEntries((current) => current.filter((entry) => entry.id !== entryId))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to create meal plan entry.')
+      setError(err instanceof Error ? err.message : 'Failed to remove that recipe from the meal plan.')
     }
   }
+
+  const addRecipeToSlot = async (date: string, mealType: PlannableMealType, recipe: MealieRecipeSummary, replaceEntryId?: string) => {
+    if (!activeProfile) return
+    const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
+    setError('')
+    try {
+      if (replaceEntryId) {
+        await client.deleteMealPlanEntry(replaceEntryId)
+        setEntries((current) => current.filter((entry) => entry.id !== replaceEntryId))
+      }
+      const created = await client.createMealPlanEntry({
+        date,
+        entryType: mealType,
+        title: recipe.name,
+        recipeId: recipe.id,
+      })
+      setEntries((current) => [...current, created])
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add that recipe to the meal plan.')
+    } finally {
+      setPickerTarget(null)
+    }
+  }
+
+  const goToday = () => setAnchorDate(new Date())
+  const goPrevious = () =>
+    setAnchorDate((current) => {
+      if (view === 'day') return new Date(current.getTime() - DAY_MS)
+      if (view === 'week') return new Date(current.getTime() - 7 * DAY_MS)
+      return new Date(current.getFullYear(), current.getMonth() - 1, 1)
+    })
+  const goNext = () =>
+    setAnchorDate((current) => {
+      if (view === 'day') return new Date(current.getTime() + DAY_MS)
+      if (view === 'week') return new Date(current.getTime() + 7 * DAY_MS)
+      return new Date(current.getFullYear(), current.getMonth() + 1, 1)
+    })
 
   return (
     <main className="app-shell">
@@ -1532,180 +1707,505 @@ function MealPlanPage({ activeProfile }: { activeProfile: MealieProfile | null }
             <p className="intro-copy">Put a little shape around the days ahead, one meal at a time.</p>
           </section>
 
+          <div className="meal-plan-toolbar">
+            <div className="view-switcher" role="tablist" aria-label="Meal plan view">
+              {(['day', 'week', 'month'] as MealPlanView[]).map((viewOption) => (
+                <button
+                  key={viewOption}
+                  type="button"
+                  role="tab"
+                  aria-selected={view === viewOption}
+                  className={`view-switcher-button${view === viewOption ? ' active' : ''}`}
+                  onClick={() => setView(viewOption)}
+                >
+                  {viewOption === 'day' ? 'Day' : viewOption === 'week' ? 'Week' : 'Month'}
+                </button>
+              ))}
+            </div>
+            <div className="date-nav">
+              <button type="button" className="secondary-button small-button" onClick={goPrevious} aria-label="Previous">‹ Previous</button>
+              <button type="button" className="secondary-button small-button" onClick={goToday}>Today</button>
+              <button type="button" className="secondary-button small-button" onClick={goNext} aria-label="Next">Next ›</button>
+            </div>
+          </div>
+
           {error ? <p className="error-text">{error}</p> : null}
           {loading ? <p>Loading meal plans…</p> : null}
 
-          <section className="task-form">
-            <form onSubmit={createEntry} className="form-stack">
-              <h3>Plan a meal</h3>
-              <div className="meal-form-grid">
-                <label>
-                  Date
-                  <input type="date" value={entryDate} onChange={(event) => setEntryDate(event.target.value)} required />
-                </label>
-                <label>
-                  Meal
-                  <select value={entryType} onChange={(event) => setEntryType(event.target.value)}>
-                    <option value="breakfast">Breakfast</option>
-                    <option value="lunch">Lunch</option>
-                    <option value="dinner">Dinner</option>
-                    <option value="side">Side</option>
-                  </select>
-                </label>
-                <label className="meal-title-field">
-                  Recipe or meal title
-                  <input value={entryTitle} onChange={(event) => setEntryTitle(event.target.value)} placeholder="What are you planning?" />
-                </label>
-              </div>
-              <label>
-                Notes
-                <textarea value={entryText} onChange={(event) => setEntryText(event.target.value)} rows={2} placeholder="Optional notes" />
-              </label>
-              <button type="submit" className="primary-button">Add to meal plan</button>
-            </form>
-          </section>
+          {view === 'day' ? (
+            <MealPlanDayView
+              date={anchorDate}
+              slotsFor={slotsFor}
+              onAddRecipe={(mealType) => setPickerTarget({ date: toDateKey(anchorDate), mealType })}
+              onRemove={removeEntry}
+              onReplace={(mealType, entry) => setPickerTarget({ date: toDateKey(anchorDate), mealType, replaceEntryId: entry.id })}
+            />
+          ) : null}
 
-          {plans.length === 0 && !loading ? (
-            <section className="page-empty compact-empty">
-              <p>No meal plans for this week. Start planning your meals!</p>
-            </section>
-          ) : (
-            <section className="list-stack">
-              {plans.map((plan) => (
-                <article key={plan.id} className="list-row">
-                  <div className="recipe-card-body">
-                    <div className="recipe-card-header">
-                      <div>
-                        <h3>{plan.recipe?.name ?? plan.title ?? 'Meal plan entry'}</h3>
-                        <p className="meal-plan-meta">
-                          <span>{plan.date ?? 'Date not specified'}</span>
-                          <span>{plan.entryType ?? 'Meal'}</span>
-                        </p>
-                      </div>
-                      <Link className="secondary-button small-button" to={`/meal-plan/${plan.id}`}>
-                        View
-                      </Link>
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </section>
-          )}
+          {view === 'week' ? (
+            <MealPlanWeekView
+              weekStart={rangeStart}
+              slotsFor={slotsFor}
+              onAddRecipe={(date, mealType) => setPickerTarget({ date, mealType })}
+              onRemove={removeEntry}
+              onReplace={(date, mealType, entry) => setPickerTarget({ date, mealType, replaceEntryId: entry.id })}
+              onOpenDay={(date) => {
+                setAnchorDate(parseDateKey(date))
+                setView('day')
+              }}
+            />
+          ) : null}
+
+          {view === 'month' ? (
+            <MealPlanMonthView
+              monthStart={rangeStart}
+              slots={slots}
+              onOpenDay={(date) => {
+                setAnchorDate(parseDateKey(date))
+                setView('day')
+              }}
+            />
+          ) : null}
         </>
       )}
-    </main>
-  )
-}
 
-function MealPlanDetailPage({ activeProfile }: { activeProfile: MealieProfile | null }) {
-  const { id } = useParams()
-  const navigate = useNavigate()
-  const [plan, setPlan] = useState<MealieWeekPlan | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    if (!activeProfile || !id) {
-      setPlan(null)
-      return
-    }
-
-    const client = new MealieClient({
-      baseUrl: activeProfile.server,
-      token: activeProfile.token,
-    })
-
-    setLoading(true)
-    setError('')
-
-    client
-      .getMealPlan(id)
-      .then((nextPlan) => setPlan(nextPlan))
-      .catch((err: Error) => setError(err.message))
-      .finally(() => setLoading(false))
-  }, [activeProfile, id])
-
-  const deleteEntry = async () => {
-    if (!activeProfile || !id) return
-
-    const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
-    setError('')
-    try {
-      await client.deleteMealPlanEntry(id)
-      navigate('/meal-plan')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete meal plan entry.')
-    }
-  }
-
-  return (
-    <main className="app-shell detail-shell">
-      <AppHeader activeProfile={activeProfile} />
-
-      <div className="detail-toolbar">
-        <Link className="text-link" to="/meal-plan">← Back to plans</Link>
-      </div>
-
-      {loading ? <p>Loading meal plan…</p> : null}
-      {error ? <p className="error-text">{error}</p> : null}
-      {!plan && !loading && !error ? <p>No plan found.</p> : null}
-
-      {plan ? (
-        <>
-          <section className="page-intro detail-page-intro">
-            <p className="eyebrow">Meal plan entry</p>
-            <h1>{plan.recipe?.name ?? plan.title ?? 'Untitled meal'}</h1>
-            <p className="intro-copy">{plan.date ?? 'Date not specified'} · {plan.entryType ?? 'Meal'}</p>
-            <button type="button" className="text-button danger-text" onClick={deleteEntry}>Delete entry</button>
-          </section>
-
-          <section className="content-section">
-            <SectionHeading eyebrow="A note for later" title="Details" />
-            <p>{plan.text ?? 'No notes for this meal.'}</p>
-          </section>
-        </>
+      {pickerTarget && activeProfile ? (
+        <RecipePickerModal
+          activeProfile={activeProfile}
+          title={pickerTarget.replaceEntryId ? 'Replace recipe' : `Add a recipe to ${MEAL_TYPE_LABELS[pickerTarget.mealType]}`}
+          onSelect={(recipe) => void addRecipeToSlot(pickerTarget.date, pickerTarget.mealType, recipe, pickerTarget.replaceEntryId)}
+          onClose={() => setPickerTarget(null)}
+        />
       ) : null}
     </main>
   )
 }
 
-function RandomRecipePage({ activeProfile }: { activeProfile: MealieProfile | null }) {
-  const [recipe, setRecipe] = useState<MealieRecipeSummary | null>(null)
+function MealSlotCard({
+  mealType,
+  entries,
+  onAddRecipe,
+  onRemove,
+  onReplace,
+}: {
+  mealType: PlannableMealType
+  entries: MealieWeekPlan[]
+  onAddRecipe: () => void
+  onRemove: (entryId: string) => void
+  onReplace: (entry: MealieWeekPlan) => void
+}) {
+  return (
+    <div className="meal-slot-card">
+      <h4 className="meal-slot-heading">{MEAL_TYPE_LABELS[mealType]}</h4>
+      {entries.length === 0 ? <p className="meal-slot-empty">Nothing planned yet.</p> : null}
+      <ul className="meal-slot-recipe-list">
+        {entries.map((entry) => (
+          <li key={entry.id} className="meal-slot-recipe">
+            <span className="meal-slot-recipe-name">{entry.recipe?.name ?? entry.title ?? 'Untitled meal'}</span>
+            <div className="meal-slot-recipe-actions">
+              {entry.recipe?.slug ? (
+                <Link className="text-link small-link" to={`/recipes/${entry.recipe.slug}`}>View</Link>
+              ) : null}
+              <button type="button" className="text-button small-link" onClick={() => onReplace(entry)}>Replace</button>
+              <button type="button" className="text-button danger-text small-link" onClick={() => onRemove(entry.id)}>Remove</button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <button type="button" className="secondary-button small-button add-recipe-button" onClick={onAddRecipe}>+ Add Recipe</button>
+    </div>
+  )
+}
+
+function MealPlanDayView({
+  date,
+  slotsFor,
+  onAddRecipe,
+  onRemove,
+  onReplace,
+}: {
+  date: Date
+  slotsFor: (dateKey: string, mealType: PlannableMealType) => MealieWeekPlan[]
+  onAddRecipe: (mealType: PlannableMealType) => void
+  onRemove: (entryId: string) => void
+  onReplace: (mealType: PlannableMealType, entry: MealieWeekPlan) => void
+}) {
+  const dateKey = toDateKey(date)
+  return (
+    <section className="meal-plan-day-view">
+      <h2 className="meal-plan-day-heading">
+        {date.toLocaleDateString(undefined, { weekday: 'long' })}
+        <span className="meal-plan-day-date">{date.toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}</span>
+      </h2>
+      <div className="meal-plan-day-slots">
+        {PLANNABLE_MEAL_TYPES.map((mealType) => (
+          <MealSlotCard
+            key={mealType}
+            mealType={mealType}
+            entries={slotsFor(dateKey, mealType)}
+            onAddRecipe={() => onAddRecipe(mealType)}
+            onRemove={onRemove}
+            onReplace={(entry) => onReplace(mealType, entry)}
+          />
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function MealPlanWeekView({
+  weekStart,
+  slotsFor,
+  onAddRecipe,
+  onRemove,
+  onReplace,
+  onOpenDay,
+}: {
+  weekStart: Date
+  slotsFor: (dateKey: string, mealType: PlannableMealType) => MealieWeekPlan[]
+  onAddRecipe: (date: string, mealType: PlannableMealType) => void
+  onRemove: (entryId: string) => void
+  onReplace: (date: string, mealType: PlannableMealType, entry: MealieWeekPlan) => void
+  onOpenDay: (date: string) => void
+}) {
+  const days = useMemo(
+    () => Array.from({ length: 7 }, (_, index) => new Date(weekStart.getTime() + index * DAY_MS)),
+    [weekStart],
+  )
+
+  return (
+    <section className="meal-plan-week-view">
+      {days.map((day) => {
+        const dateKey = toDateKey(day)
+        return (
+          <div key={dateKey} className="meal-plan-week-day">
+            <button type="button" className="meal-plan-week-day-heading" onClick={() => onOpenDay(dateKey)}>
+              <span>{day.toLocaleDateString(undefined, { weekday: 'short' })}</span>
+              <span className="meal-plan-week-day-number">{day.getDate()}</span>
+            </button>
+            <div className="meal-plan-week-day-slots">
+              {PLANNABLE_MEAL_TYPES.map((mealType) => (
+                <MealSlotCard
+                  key={mealType}
+                  mealType={mealType}
+                  entries={slotsFor(dateKey, mealType)}
+                  onAddRecipe={() => onAddRecipe(dateKey, mealType)}
+                  onRemove={onRemove}
+                  onReplace={(entry) => onReplace(dateKey, mealType, entry)}
+                />
+              ))}
+            </div>
+          </div>
+        )
+      })}
+    </section>
+  )
+}
+
+function MealPlanMonthView({
+  monthStart,
+  slots,
+  onOpenDay,
+}: {
+  monthStart: Date
+  slots: MealPlanSlot[]
+  onOpenDay: (date: string) => void
+}) {
+  const slotsByDate = useMemo(() => {
+    const map = new Map<string, MealPlanSlot[]>()
+    for (const slot of slots) {
+      const existing = map.get(slot.date) ?? []
+      existing.push(slot)
+      map.set(slot.date, existing)
+    }
+    return map
+  }, [slots])
+
+  const firstDayOffset = startOfWeek(monthStart).getDate() === monthStart.getDate() ? 0 : monthStart.getDay()
+  const daysInMonth = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0).getDate()
+  const cells = useMemo(() => {
+    const result: (Date | null)[] = []
+    for (let index = 0; index < firstDayOffset; index += 1) result.push(null)
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      result.push(new Date(monthStart.getFullYear(), monthStart.getMonth(), day))
+    }
+    return result
+  }, [firstDayOffset, daysInMonth, monthStart])
+
+  const mealSummary = (mealType: PlannableMealType, daySlots: MealPlanSlot[]) => {
+    const slot = daySlots.find((candidate) => candidate.entryType === mealType)
+    if (!slot || slot.entries.length === 0) return null
+    const names = slot.entries.map((entry) => entry.recipe?.name ?? entry.title ?? 'Untitled')
+    const label = mealType === 'breakfast' ? 'B' : mealType === 'lunch' ? 'L' : 'D'
+    return `${label}: ${names.join(' + ')}`
+  }
+
+  return (
+    <section className="meal-plan-month-view">
+      <h2 className="meal-plan-month-heading">
+        {monthStart.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+      </h2>
+      <div className="meal-plan-month-grid">
+        {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((label) => (
+          <div key={label} className="meal-plan-month-weekday">{label}</div>
+        ))}
+        {cells.map((day, index) => {
+          if (!day) return <div key={`empty-${index}`} className="meal-plan-month-cell empty" />
+          const dateKey = toDateKey(day)
+          const daySlots = slotsByDate.get(dateKey) ?? []
+          const summaries = PLANNABLE_MEAL_TYPES.map((mealType) => mealSummary(mealType, daySlots)).filter(Boolean)
+          return (
+            <button key={dateKey} type="button" className="meal-plan-month-cell" onClick={() => onOpenDay(dateKey)}>
+              <span className="meal-plan-month-day-number">{day.getDate()}</span>
+              {summaries.map((summary) => (
+                <span key={summary} className="meal-plan-month-summary">{summary}</span>
+              ))}
+            </button>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+/** A searchable recipe picker reusing the same search/category/tag filters as
+ * the Recipes page, used by the meal planner's "+ Add Recipe" / "Replace" flows. */
+function RecipePickerModal({
+  activeProfile,
+  title,
+  onSelect,
+  onClose,
+}: {
+  activeProfile: MealieProfile
+  title: string
+  onSelect: (recipe: MealieRecipeSummary) => void
+  onClose: () => void
+}) {
+  const [search, setSearch] = useState('')
+  const [categories, setCategories] = useState<MealieCategory[]>([])
+  const [tags, setTags] = useState<MealieTag[]>([])
+  const [categoryId, setCategoryId] = useState('')
+  const [tagId, setTagId] = useState('')
+  const [recipes, setRecipes] = useState<MealieRecipeSummary[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const getRandomRecipe = useCallback(async () => {
-    if (!activeProfile) return
-
-    const client = new MealieClient({
-      baseUrl: activeProfile.server,
-      token: activeProfile.token,
-    })
-
-    setLoading(true)
-    setError('')
-
-    try {
-      const recipes = await client.getRecipes({ perPage: 100 })
-      if (recipes.length > 0) {
-        const randomIndex = Math.floor(Math.random() * recipes.length)
-        setRecipe(recipes[randomIndex])
-      } else {
-        setError('No recipes available in your library.')
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load recipes.')
-    } finally {
-      setLoading(false)
-    }
+  useEffect(() => {
+    const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
+    client.getCategories().then(setCategories).catch(() => undefined)
+    client.getTags().then(setTags).catch(() => undefined)
   }, [activeProfile])
 
   useEffect(() => {
-    void getRandomRecipe()
-  }, [getRandomRecipe])
+    const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
+    setLoading(true)
+    setError('')
+
+    const timeout = window.setTimeout(() => {
+      client
+        .getRecipes({
+          search: search.trim() || undefined,
+          categories: categoryId ? [categoryId] : undefined,
+          tags: tagId ? [tagId] : undefined,
+        })
+        .then((result) => setRecipes(result))
+        .catch((err: Error) => setError(err.message))
+        .finally(() => setLoading(false))
+    }, 250)
+
+    return () => window.clearTimeout(timeout)
+  }, [activeProfile, search, categoryId, tagId])
 
   return (
-    <main className="app-shell detail-shell random-shell">
+    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="modal-panel recipe-picker-panel">
+        <h3>{title}</h3>
+        <div className="recipe-picker-filters">
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search recipes…"
+            aria-label="Search recipes"
+          />
+          <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} aria-label="Filter by category">
+            <option value="">All categories</option>
+            {categories.map((category) => (
+              <option key={category.id} value={category.id}>{category.name}</option>
+            ))}
+          </select>
+          <select value={tagId} onChange={(event) => setTagId(event.target.value)} aria-label="Filter by tag">
+            <option value="">All tags</option>
+            {tags.map((tag) => (
+              <option key={tag.id} value={tag.id}>{tag.name}</option>
+            ))}
+          </select>
+        </div>
+
+        {error ? <p className="error-text">{error}</p> : null}
+        {loading ? <p>Searching…</p> : null}
+
+        <ul className="recipe-picker-results">
+          {!loading && recipes.length === 0 ? <li className="meal-slot-empty">No recipes match.</li> : null}
+          {recipes.map((recipe) => (
+            <li key={recipe.id}>
+              <button type="button" className="recipe-picker-result" onClick={() => onSelect(recipe)}>
+                {recipe.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+
+        <div className="modal-actions">
+          <button type="button" className="text-button" onClick={onClose}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** The old `/random-recipe` route now lives at `/roulette`; redirect for any
+ * bookmarks or links still pointing at the previous path. */
+function RouletteRedirect() {
+  const navigate = useNavigate()
+  useEffect(() => {
+    navigate('/roulette', { replace: true })
+  }, [navigate])
+  return null
+}
+
+interface RouletteResultRecipe extends MealieRecipeSummary {
+  __detail?: MealieRecipeDetail
+}
+
+function matchesIngredients(detail: MealieRecipeDetail, ingredients: string[], mode: 'any' | 'all'): boolean {
+  if (ingredients.length === 0) return true
+
+  const recipeIngredientText = (detail.ingredients ?? [])
+    .map((ingredient) => `${ingredient.food ?? ingredient.name ?? ''} ${ingredient.display ?? ''} ${ingredient.note ?? ''}`.toLowerCase())
+    .join(' | ')
+
+  const haystackHas = (needle: string) => recipeIngredientText.includes(needle.toLowerCase().trim())
+
+  return mode === 'all'
+    ? ingredients.every((needle) => haystackHas(needle))
+    : ingredients.some((needle) => haystackHas(needle))
+}
+
+function DinnerRoulettePage({ activeProfile }: { activeProfile: MealieProfile | null }) {
+  const [categories, setCategories] = useState<MealieCategory[]>([])
+  const [tags, setTags] = useState<MealieTag[]>([])
+  const [categoryId, setCategoryId] = useState('')
+  const [tagIds, setTagIds] = useState<string[]>([])
+  const [maxPrepTime, setMaxPrepTime] = useState<number | undefined>(undefined)
+  const [maxCookTime, setMaxCookTime] = useState<number | undefined>(undefined)
+  const [customPrep, setCustomPrep] = useState('')
+  const [customCook, setCustomCook] = useState('')
+  const [ingredientInput, setIngredientInput] = useState('')
+  const [ingredients, setIngredients] = useState<string[]>([])
+  const [ingredientMode, setIngredientMode] = useState<'any' | 'all'>('any')
+
+  const [rolling, setRolling] = useState(false)
+  const [error, setError] = useState('')
+  const [searchedNoResults, setSearchedNoResults] = useState(false)
+  const [result, setResult] = useState<RouletteResultRecipe | null>(null)
+  const [showMealPlanModal, setShowMealPlanModal] = useState(false)
+  const [showShoppingModal, setShowShoppingModal] = useState(false)
+  const recentResultIds = useRef<string[]>([])
+
+  useEffect(() => {
+    if (!activeProfile) return
+    const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
+    Promise.allSettled([client.getCategories(), client.getTags()]).then(([categoryResult, tagResult]) => {
+      if (categoryResult.status === 'fulfilled') setCategories(categoryResult.value)
+      if (tagResult.status === 'fulfilled') setTags(tagResult.value)
+    })
+  }, [activeProfile])
+
+  const toggleTag = (id: string) => {
+    setTagIds((current) => (current.includes(id) ? current.filter((value) => value !== id) : [...current, id]))
+  }
+
+  const addIngredient = () => {
+    const value = ingredientInput.trim()
+    if (!value) return
+    setIngredients((current) => (current.includes(value) ? current : [...current, value]))
+    setIngredientInput('')
+  }
+
+  const removeIngredient = (value: string) => {
+    setIngredients((current) => current.filter((item) => item !== value))
+  }
+
+  const clearCategory = () => setCategoryId('')
+  const clearTags = () => setTagIds([])
+  const clearTimeFilters = () => {
+    setMaxPrepTime(undefined)
+    setMaxCookTime(undefined)
+    setCustomPrep('')
+    setCustomCook('')
+  }
+  const clearIngredients = () => setIngredients([])
+  const clearAllFilters = () => {
+    clearCategory()
+    clearTags()
+    clearTimeFilters()
+    clearIngredients()
+  }
+
+  const hasAnyFilter = Boolean(categoryId) || tagIds.length > 0 || maxPrepTime !== undefined || maxCookTime !== undefined || ingredients.length > 0
+
+  const roll = useCallback(async () => {
+    if (!activeProfile) return
+
+    setRolling(true)
+    setError('')
+    setSearchedNoResults(false)
+
+    try {
+      const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
+      const candidates = await client.getAllRecipes({
+        categories: categoryId ? [categoryId] : undefined,
+        tags: tagIds.length > 0 ? tagIds : undefined,
+        maxPrepTime,
+        maxCookTime,
+      })
+
+      let pool: RouletteResultRecipe[] = candidates
+
+      if (ingredients.length > 0) {
+        const details = await Promise.allSettled(candidates.map((recipe) => client.getRecipe(recipe.slug || recipe.id)))
+        pool = candidates.filter((_recipe, index) => {
+          const detailResult = details[index]
+          if (detailResult.status !== 'fulfilled') return false
+          return matchesIngredients(detailResult.value, ingredients, ingredientMode)
+        })
+      }
+
+      if (pool.length === 0) {
+        setResult(null)
+        setSearchedNoResults(true)
+        return
+      }
+
+      // Avoid immediately repeating a very recent result when other options exist.
+      const notRecentlyShown = pool.filter((recipe) => !recentResultIds.current.includes(recipe.id))
+      const choicePool = notRecentlyShown.length > 0 ? notRecentlyShown : pool
+      const chosen = choicePool[Math.floor(Math.random() * choicePool.length)]
+
+      recentResultIds.current = [chosen.id, ...recentResultIds.current].slice(0, 5)
+      setResult(chosen)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to roll for a recipe.')
+    } finally {
+      setRolling(false)
+    }
+  }, [activeProfile, categoryId, tagIds, maxPrepTime, maxCookTime, ingredients, ingredientMode])
+
+  const timePresets = [10, 20, 30, 45, 60]
+
+  return (
+    <main className="app-shell detail-shell roulette-shell">
       <AppHeader activeProfile={activeProfile} />
 
       <div className="detail-toolbar">
@@ -1715,75 +2215,420 @@ function RandomRecipePage({ activeProfile }: { activeProfile: MealieProfile | nu
       {!activeProfile ? (
         <section className="page-empty compact-empty">
           <p>No active Mealie account is connected.</p>
-          <Link className="primary-button" to="/setup">
-            Connect to Mealie
-          </Link>
+          <Link className="primary-button" to="/setup">Connect to Mealie</Link>
         </section>
       ) : (
         <>
+          <section className="page-intro">
+            <p className="eyebrow">A Mealie Connect original</p>
+            <h1>🎲 Dinner Roulette</h1>
+            <p className="intro-copy">Don&rsquo;t know what to cook? Roll completely at random, or narrow it down below. Every filter is optional.</p>
+          </section>
+
+          <section className="roulette-filters">
+            <div className="roulette-filter-group">
+              <h4>Category</h4>
+              <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)}>
+                <option value="">All categories</option>
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>{category.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="roulette-filter-group">
+              <h4>Prep time</h4>
+              <div className="chip-list">
+                <button type="button" className={maxPrepTime === undefined ? 'chip active' : 'chip'} onClick={() => { setMaxPrepTime(undefined); setCustomPrep('') }}>Any</button>
+                {timePresets.map((minutes) => (
+                  <button key={minutes} type="button" className={maxPrepTime === minutes ? 'chip active' : 'chip'} onClick={() => { setMaxPrepTime(minutes); setCustomPrep('') }}>{minutes} min</button>
+                ))}
+                <input
+                  type="number"
+                  min={1}
+                  className="roulette-custom-time"
+                  placeholder="Custom"
+                  value={customPrep}
+                  onChange={(event) => {
+                    setCustomPrep(event.target.value)
+                    const parsed = Number.parseInt(event.target.value, 10)
+                    setMaxPrepTime(Number.isNaN(parsed) ? undefined : parsed)
+                  }}
+                  aria-label="Custom maximum prep time in minutes"
+                />
+              </div>
+            </div>
+
+            <div className="roulette-filter-group">
+              <h4>Cook time</h4>
+              <div className="chip-list">
+                <button type="button" className={maxCookTime === undefined ? 'chip active' : 'chip'} onClick={() => { setMaxCookTime(undefined); setCustomCook('') }}>Any</button>
+                {timePresets.map((minutes) => (
+                  <button key={minutes} type="button" className={maxCookTime === minutes ? 'chip active' : 'chip'} onClick={() => { setMaxCookTime(minutes); setCustomCook('') }}>{minutes} min</button>
+                ))}
+                <input
+                  type="number"
+                  min={1}
+                  className="roulette-custom-time"
+                  placeholder="Custom"
+                  value={customCook}
+                  onChange={(event) => {
+                    setCustomCook(event.target.value)
+                    const parsed = Number.parseInt(event.target.value, 10)
+                    setMaxCookTime(Number.isNaN(parsed) ? undefined : parsed)
+                  }}
+                  aria-label="Custom maximum cook time in minutes"
+                />
+              </div>
+            </div>
+
+            <div className="roulette-filter-group">
+              <h4>Tags</h4>
+              <div className="chip-list">
+                {tags.length === 0 ? <p className="empty-copy">No tags found on your Mealie server.</p> : null}
+                {tags.map((tag) => (
+                  <button key={tag.id} type="button" className={tagIds.includes(tag.id) ? 'chip active' : 'chip'} onClick={() => toggleTag(tag.id)}>{tag.name}</button>
+                ))}
+              </div>
+            </div>
+
+            <div className="roulette-filter-group">
+              <h4>Ingredients on hand</h4>
+              <div className="roulette-ingredient-input">
+                <input
+                  type="text"
+                  value={ingredientInput}
+                  onChange={(event) => setIngredientInput(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault()
+                      addIngredient()
+                    }
+                  }}
+                  placeholder="Chicken, rice, garlic…"
+                  aria-label="Add an ingredient you have on hand"
+                />
+                <button type="button" className="secondary-button small-button" onClick={addIngredient}>Add</button>
+              </div>
+              {ingredients.length > 0 ? (
+                <div className="chip-list">
+                  {ingredients.map((ingredient) => (
+                    <button key={ingredient} type="button" className="chip active" onClick={() => removeIngredient(ingredient)} aria-label={`Remove ${ingredient}`}>
+                      {ingredient} ✕
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              {ingredients.length > 0 ? (
+                <div className="roulette-ingredient-mode" role="radiogroup" aria-label="Ingredient matching mode">
+                  <button type="button" className={ingredientMode === 'any' ? 'chip active' : 'chip'} onClick={() => setIngredientMode('any')} aria-pressed={ingredientMode === 'any'}>Match ANY</button>
+                  <button type="button" className={ingredientMode === 'all' ? 'chip active' : 'chip'} onClick={() => setIngredientMode('all')} aria-pressed={ingredientMode === 'all'}>Match ALL</button>
+                </div>
+              ) : null}
+            </div>
+
+            {hasAnyFilter ? (
+              <button type="button" className="text-button" onClick={clearAllFilters}>Clear all filters</button>
+            ) : null}
+          </section>
+
           {error ? <p className="error-text">{error}</p> : null}
 
-          {loading ? (
-            <section className="page-empty compact-empty">
-              <p>Finding a recipe for you…</p>
+          <section className="roulette-roll-section">
+            <button
+              type="button"
+              className="primary-button roulette-roll-button"
+              onClick={() => void roll()}
+              disabled={rolling}
+            >
+              <span className={rolling ? 'roulette-dice rolling' : 'roulette-dice'} aria-hidden="true">🎲</span>
+              {rolling ? 'Rolling…' : 'ROLL'}
+            </button>
+          </section>
+
+          {searchedNoResults ? (
+            <section className="page-empty compact-empty roulette-no-results">
+              <p><strong>No recipes match those filters.</strong></p>
+              <div className="roulette-current-filters">
+                {categoryId ? <span className="chip active">{categories.find((category) => category.id === categoryId)?.name ?? 'Category'}</span> : null}
+                {tagIds.map((id) => <span key={id} className="chip active">{tags.find((tag) => tag.id === id)?.name ?? 'Tag'}</span>)}
+                {maxPrepTime !== undefined ? <span className="chip active">Prep ≤ {maxPrepTime} min</span> : null}
+                {maxCookTime !== undefined ? <span className="chip active">Cook ≤ {maxCookTime} min</span> : null}
+                {ingredients.map((ingredient) => <span key={ingredient} className="chip active">{ingredient}</span>)}
+              </div>
+              <p>Try:</p>
+              <div className="roulette-clear-buttons">
+                {ingredients.length > 0 ? <button type="button" className="secondary-button small-button" onClick={clearIngredients}>Clear ingredients</button> : null}
+                {(maxPrepTime !== undefined || maxCookTime !== undefined) ? <button type="button" className="secondary-button small-button" onClick={clearTimeFilters}>Clear time filters</button> : null}
+                {tagIds.length > 0 ? <button type="button" className="secondary-button small-button" onClick={clearTags}>Clear tags</button> : null}
+                {categoryId ? <button type="button" className="secondary-button small-button" onClick={clearCategory}>Clear category</button> : null}
+                <button type="button" className="secondary-button small-button" onClick={clearAllFilters}>Clear all filters</button>
+              </div>
             </section>
-          ) : recipe ? (
+          ) : null}
+
+          {result ? (
             <>
               <section className="detail-hero random-hero">
-                <RecipeThumbnail activeProfile={activeProfile} recipe={recipe} className="detail-image" />
+                <RecipeThumbnail activeProfile={activeProfile} recipe={result} className="detail-image" />
                 <div>
-                  <p className="eyebrow">What should you make?</p>
-                  <h2>{recipe.name}</h2>
-                  <p>{recipe.description ?? 'A delicious recipe waiting to be cooked.'}</p>
+                  <p className="eyebrow">🎲 Tonight&rsquo;s recipe</p>
+                  <h2>{result.name}</h2>
+                  <p>{result.description ?? 'A delicious recipe waiting to be cooked.'}</p>
                   <div className="meta-row detail-meta">
-                    <span>{recipe.categories?.[0]?.name ?? 'Uncategorized'}</span>
-                    {recipe.totalTime ? <span>{recipe.totalTime} min</span> : null}
-                    {recipe.servings ? <span>{recipe.servings} servings</span> : null}
+                    {(result.categories ?? []).map((category) => <span key={category.id}>{category.name}</span>)}
+                    {(result.tags ?? []).map((tag) => <span key={tag.id}>{tag.name}</span>)}
+                    {result.prepTime ? <span>Prep: {result.prepTime} min</span> : null}
+                    {result.cookTime ? <span>Cook: {result.cookTime} min</span> : null}
                   </div>
                 </div>
               </section>
 
               <section className="random-actions">
                 <div>
-                  <Link
-                    className="primary-button"
-                    to={`/cook/${recipe.slug || recipe.id}`}
-                  >
-                    Cook this recipe
-                  </Link>
-                  <Link
-                    className="secondary-button"
-                    to={`/recipes/${recipe.slug || recipe.id}`}
-                  >
-                    View full recipe
-                  </Link>
-                  <button
-                    type="button"
-                    className="secondary-button"
-                    onClick={() => getRandomRecipe()}
-                    disabled={loading}
-                  >
-                    Another recipe
-                  </button>
+                  <Link className="primary-button" to={`/cook/${result.slug || result.id}`}>Cook Now</Link>
+                  <button type="button" className="secondary-button" onClick={() => setShowMealPlanModal(true)}>Add to Meal Plan</button>
+                  <button type="button" className="secondary-button" onClick={() => setShowShoppingModal(true)}>Add Ingredients to Shopping List</button>
+                  <Link className="secondary-button" to={`/recipes/${result.slug || result.id}`}>View Recipe</Link>
+                  <button type="button" className="secondary-button" onClick={() => void roll()} disabled={rolling}>Roll Again</button>
                 </div>
               </section>
             </>
-          ) : (
-            <section className="page-empty compact-empty">
-              <p>No recipe selected yet.</p>
-              <button
-                type="button"
-                className="primary-button"
-                onClick={() => getRandomRecipe()}
-                disabled={loading}
-              >
-                Get Random Recipe
-              </button>
-            </section>
-          )}
+          ) : null}
+
+          {showMealPlanModal && result ? (
+            <AddToMealPlanModal
+              activeProfile={activeProfile}
+              recipe={result}
+              onClose={() => setShowMealPlanModal(false)}
+            />
+          ) : null}
+
+          {showShoppingModal && result ? (
+            <AddIngredientsToShoppingListModal
+              activeProfile={activeProfile}
+              recipeId={result.id}
+              recipeName={result.name}
+              onClose={() => setShowShoppingModal(false)}
+            />
+          ) : null}
         </>
       )}
     </main>
+  )
+}
+
+/** Adds a recipe (by id/name) to a chosen date and meal type via the real
+ * Mealie meal-plan endpoint. Shared by Dinner Roulette and the meal planner. */
+function AddToMealPlanModal({
+  activeProfile,
+  recipe,
+  onClose,
+}: {
+  activeProfile: MealieProfile
+  recipe: MealieRecipeSummary
+  onClose: () => void
+}) {
+  const [date, setDate] = useState(new Date().toISOString().split('T')[0])
+  const [mealType, setMealType] = useState<PlannableMealType>('dinner')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
+
+  const submit = async () => {
+    setSubmitting(true)
+    setError('')
+    try {
+      const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
+      await client.createMealPlanEntry({
+        date,
+        entryType: mealType,
+        title: recipe.name,
+        recipeId: recipe.id,
+      })
+      setSuccess(true)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add to your meal plan.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Add to meal plan">
+      <div className="modal-panel">
+        {success ? (
+          <>
+            <p className="success-text">✓ Added {recipe.name} to {MEAL_TYPE_LABELS[mealType]} on {date}</p>
+            <div className="modal-actions">
+              <Link className="secondary-button" to="/meal-plan">View Meal Plan</Link>
+              <button type="button" className="primary-button" onClick={onClose}>Done</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <h3>Add “{recipe.name}” to your meal plan</h3>
+            <label>
+              Date
+              <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+            </label>
+            <label>
+              Meal
+              <select value={mealType} onChange={(event) => setMealType(event.target.value as PlannableMealType)}>
+                {PLANNABLE_MEAL_TYPES.map((type) => (
+                  <option key={type} value={type}>{MEAL_TYPE_LABELS[type]}</option>
+                ))}
+              </select>
+            </label>
+            {error ? <p className="error-text">{error}</p> : null}
+            <div className="modal-actions">
+              <button type="button" className="text-button" onClick={onClose} disabled={submitting}>Cancel</button>
+              <button type="button" className="primary-button" onClick={() => void submit()} disabled={submitting}>
+                {submitting ? 'Adding…' : 'Add to Meal Plan'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** Adds every ingredient from a recipe to an existing or newly created
+ * shopping list, using the real Mealie shopping-list API. */
+function AddIngredientsToShoppingListModal({
+  activeProfile,
+  recipeId,
+  recipeName,
+  onClose,
+}: {
+  activeProfile: MealieProfile
+  recipeId: string
+  recipeName: string
+  onClose: () => void
+}) {
+  const [lists, setLists] = useState<MealieShoppingList[]>([])
+  const [loadingLists, setLoadingLists] = useState(true)
+  const [listError, setListError] = useState('')
+  const [mode, setMode] = useState<'select' | 'create'>('select')
+  const [selectedListId, setSelectedListId] = useState('')
+  const [newListName, setNewListName] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState('')
+  const [result, setResult] = useState<{ listId: string; listName: string; added: number } | null>(null)
+
+  useEffect(() => {
+    const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
+    client
+      .getShoppingLists()
+      .then((nextLists) => {
+        setLists(nextLists)
+        setSelectedListId(nextLists[0]?.id ?? '')
+        if (nextLists.length === 0) setMode('create')
+      })
+      .catch((err: Error) => setListError(err.message))
+      .finally(() => setLoadingLists(false))
+  }, [activeProfile])
+
+  const submit = async () => {
+    setError('')
+    setSubmitting(true)
+    try {
+      const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
+
+      let targetListId = selectedListId
+      let targetListName = lists.find((list) => list.id === selectedListId)?.name ?? ''
+      const initialItemCount = mode === 'create'
+        ? 0
+        : lists.find((list) => list.id === selectedListId)?.items?.length ?? 0
+
+      if (mode === 'create') {
+        if (!newListName.trim()) {
+          throw new Error('Enter a name for the new shopping list.')
+        }
+        const created = await client.createShoppingList(newListName.trim())
+        targetListId = created.id
+        targetListName = created.name
+      } else if (!targetListId) {
+        throw new Error('Choose a shopping list.')
+      }
+
+      const updated = await client.addRecipeIngredientsToShoppingList(targetListId, recipeId)
+      setResult({
+        listId: targetListId,
+        listName: targetListName,
+        added: Math.max(0, (updated.items?.length ?? 0) - initialItemCount),
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add ingredients. Check your connection to Mealie and try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Add ingredients to shopping list">
+      <div className="modal-panel">
+        {result ? (
+          <>
+            <p className="success-text">✓ Added {result.added} ingredient{result.added === 1 ? '' : 's'} to {result.listName}</p>
+            <div className="modal-actions">
+              <Link className="secondary-button" to={`/shopping/${result.listId}`}>View Shopping List</Link>
+              <button type="button" className="primary-button" onClick={onClose}>Done</button>
+            </div>
+          </>
+        ) : (
+          <>
+            <h3>Add ingredients from “{recipeName}”</h3>
+            <p className="intro-copy">Add ingredients to&hellip;</p>
+
+            {loadingLists ? <p>Loading your shopping lists…</p> : null}
+            {listError ? <p className="error-text">{listError}</p> : null}
+
+            {!loadingLists ? (
+              <div className="shopping-target-picker">
+                {lists.length > 0 ? (
+                  <label>
+                    <input type="radio" name="shopping-target-mode" checked={mode === 'select'} onChange={() => setMode('select')} />
+                    Existing shopping list
+                  </label>
+                ) : null}
+                {mode === 'select' && lists.length > 0 ? (
+                  <select value={selectedListId} onChange={(event) => setSelectedListId(event.target.value)}>
+                    {lists.map((list) => (
+                      <option key={list.id} value={list.id}>{list.name}</option>
+                    ))}
+                  </select>
+                ) : null}
+
+                <label>
+                  <input type="radio" name="shopping-target-mode" checked={mode === 'create'} onChange={() => setMode('create')} />
+                  + Create new shopping list
+                </label>
+                {mode === 'create' ? (
+                  <input
+                    type="text"
+                    value={newListName}
+                    onChange={(event) => setNewListName(event.target.value)}
+                    placeholder="Shopping list name"
+                    aria-label="New shopping list name"
+                  />
+                ) : null}
+              </div>
+            ) : null}
+
+            {error ? <p className="error-text">{error}</p> : null}
+
+            <div className="modal-actions">
+              <button type="button" className="text-button" onClick={onClose} disabled={submitting}>Cancel</button>
+              <button type="button" className="primary-button" onClick={() => void submit()} disabled={submitting || loadingLists}>
+                {submitting ? 'Adding…' : mode === 'create' ? 'Create & Add Ingredients' : 'Add Ingredients'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   )
 }
 

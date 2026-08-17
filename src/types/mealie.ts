@@ -116,3 +116,20 @@ export interface MealieWeekPlan {
   groupId?: string
   planDays?: MealieMealPlanDay[]
 }
+
+/** The only meal types offered when creating a new meal-plan entry. */
+export const PLANNABLE_MEAL_TYPES = ['breakfast', 'lunch', 'dinner'] as const
+export type PlannableMealType = (typeof PLANNABLE_MEAL_TYPES)[number]
+
+export type ThemeName = 'purple' | 'blue' | 'red' | 'green' | 'dark'
+
+export type IngredientMatchMode = 'any' | 'all'
+
+export interface DinnerRouletteFilters {
+  categoryId?: string
+  tagIds?: string[]
+  maxPrepTime?: number
+  maxCookTime?: number
+  ingredients?: string[]
+  ingredientMode?: IngredientMatchMode
+}
