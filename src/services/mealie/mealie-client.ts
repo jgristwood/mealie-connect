@@ -187,6 +187,9 @@ export class MealieClient {
     })
 
     if (!response.ok) {
+      if (response.status === 401 || response.status === 403) {
+        throw new Error('Mealie authentication failed. Please sign in again.')
+      }
       throw new Error('Unable to load the current Mealie user profile.')
     }
 

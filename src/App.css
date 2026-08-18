@@ -184,11 +184,41 @@ button {
   border-bottom: 1px solid var(--border);
 }
 
+html.native-android .app-header {
+  padding-top: calc(4px + env(safe-area-inset-top, 0px));
+}
+
+.app-header-top {
+  display: grid;
+  grid-template-columns: minmax(88px, auto) minmax(0, 1fr) minmax(36px, auto);
+  align-items: start;
+  width: 100%;
+  gap: 16px;
+}
+
+.app-header-leading,
+.app-header-trailing {
+  display: flex;
+  align-items: center;
+}
+
+.app-header-leading {
+  justify-content: flex-start;
+}
+
+.app-header-trailing {
+  justify-content: flex-end;
+}
+
 .brand-cluster {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-self: center;
   gap: 6px;
+  min-width: 0;
+  width: fit-content;
+  margin-inline: auto;
 }
 
 .main-nav {
@@ -251,24 +281,36 @@ button {
   color: var(--primary);
 }
 
-.header-settings-button {
-  position: absolute;
-  top: 16px;
-  left: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 36px;
-  padding: 0 14px;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
-  color: var(--primary-strong);
+  .header-settings-button {
+    position: static;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 36px;
+    min-width: 84px;
+    padding: 0 14px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--primary-strong);
   font-size: 0.82rem;
   font-weight: 700;
   letter-spacing: 0.02em;
+  line-height: 1;
+  white-space: nowrap;
   text-decoration: none;
   transition: background var(--ease), border-color var(--ease), transform var(--ease);
+}
+
+.header-settings-icon {
+  display: none;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.header-settings-label {
+  display: inline;
 }
 
 .header-settings-button:hover,
@@ -279,9 +321,7 @@ button {
 }
 
 .header-import-button {
-  position: absolute;
-  top: 16px;
-  right: 0;
+  position: static;
   display: inline-grid;
   place-items: center;
   width: 36px;
@@ -302,6 +342,12 @@ button {
   border-color: var(--primary-strong);
   background: var(--primary-strong);
   transform: translateY(-1px);
+}
+
+.header-action-spacer {
+  display: block;
+  min-width: 88px;
+  min-height: 36px;
 }
 
 .account-link {
@@ -755,12 +801,12 @@ button {
 }
 
 @media (max-width: 640px) {
-  .header-settings-button {
-    position: static;
-    margin-right: auto;
-    min-height: 32px;
-    padding: 0 10px;
-    font-size: 0.74rem;
+  .app-header-top {
+    grid-template-columns: 32px minmax(0, 1fr) 32px;
+  }
+
+  .header-action-spacer {
+    min-width: 32px;
   }
 }
 
@@ -1189,6 +1235,32 @@ textarea:focus,
 select:focus {
   outline: 3px solid rgba(216, 137, 76, 0.22);
   border-color: var(--primary);
+}
+
+.native-connection-status {
+  position: fixed;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  z-index: 1200;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  padding: 6px 12px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: 0 6px 18px rgba(20, 14, 25, 0.08);
+}
+
+.native-connection-status.online {
+  border-color: color-mix(in srgb, var(--primary) 22%, var(--border-strong));
+}
+
+.native-connection-status.offline,
+.native-connection-status.warning {
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--border-strong));
+  color: var(--danger);
 }
 
 .search-panel input {
@@ -1998,14 +2070,12 @@ select:focus {
 }
 
 @media (max-width: 720px) {
-  .app-header {
-    grid-template-columns: 1fr auto;
-    gap: 12px;
+  .app-header-top {
+    grid-template-columns: 36px minmax(0, 1fr) 36px;
+    gap: 10px;
   }
 
   .main-nav {
-    grid-column: 1 / -1;
-    grid-row: 2;
     justify-content: space-between;
     gap: 6px;
     padding-top: 4px;
@@ -2995,14 +3065,18 @@ select:focus {
     width: 100%;
     max-width: 100%;
     margin-left: 0;
-    padding: 160px 0 18px;
+    padding: calc(8px + env(safe-area-inset-top, 0px)) 0 18px;
+    gap: 14px;
+  }
+
+  .app-header-top {
+    width: 100%;
+    gap: 8px;
   }
 
   .brand-cluster {
-    position: absolute;
-    top: 4px;
-    left: 50%;
-    transform: translateX(-50%);
+    width: fit-content;
+    max-width: 220px;
   }
 
   .main-nav {
@@ -3010,15 +3084,16 @@ select:focus {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 4px;
-    margin-top: 18px;
+    margin-top: 0;
+    padding-top: 0;
   }
 
-  .main-nav.has-home {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+   .main-nav.has-home {
+     grid-template-columns: repeat(2, minmax(0, 1fr));
+   }
 
-  .main-nav a {
-    width: 100%;
+   .main-nav a {
+     width: 100%;
     max-width: none;
     min-width: 0;
     justify-content: center;
@@ -3028,6 +3103,67 @@ select:focus {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .brand-lockup.compact {
+    font-size: 1.05rem;
+  }
+
+  .brand-lockup.compact .brand-logo {
+    width: 60px;
+    height: 60px;
+  }
+
+  .header-profile-link {
+    justify-content: center;
+    text-align: center;
+  }
+
+  .app-header-leading,
+  .app-header-trailing {
+    min-width: 36px;
+    min-height: 36px;
+    justify-content: center;
+  }
+
+  .header-settings-button {
+    min-height: 36px;
+    width: 36px;
+    min-width: 36px;
+    padding: 0;
+    border-color: var(--primary);
+    border-radius: 50%;
+    background: var(--primary);
+    color: var(--surface);
+    font-size: 0.85rem;
+    gap: 0;
+  }
+
+  .header-settings-icon {
+    display: block;
+    font-size: 1.05rem;
+  }
+
+  .header-settings-label {
+    display: none;
+  }
+
+  .header-settings-button:hover,
+  .header-settings-button.active {
+    border-color: var(--primary-strong);
+    background: var(--primary-strong);
+  }
+
+  .header-action-spacer {
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  .header-import-button {
+    width: 36px;
+    height: 36px;
+    font-size: 1.28rem;
+    padding-bottom: 0;
   }
 
   .home-intro h1,

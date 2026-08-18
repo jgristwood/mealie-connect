@@ -21,15 +21,40 @@ html, body, #root {
   min-height: 100vh;
 }
 
+html.native-android,
+html.native-android body,
+html.native-android #root {
+  min-height: 100dvh;
+}
+
+html.native-android,
+html.native-android body {
+  height: auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: auto;
+  touch-action: pan-y pinch-zoom;
+}
+
+html.native-android #root {
+  overflow: visible;
+}
+
 body {
   min-height: 100vh;
   background: #f5f1eb;
+  overscroll-behavior-y: none;
 }
 
 main {
   max-width: 960px;
   margin: 0 auto;
   padding: 24px 16px 64px;
+}
+
+html.native-android main {
+  padding-top: calc(24px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
 }
 
 h1, h2, h3, p {

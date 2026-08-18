@@ -1,4 +1,6 @@
 import type { AuthMethod, MealieProfile } from '../../types/mealie'
+import { storage } from '../../lib/storage'
+import { credentialStore } from './credential-store'
 
 const PROFILE_KEY = 'mealie-connect-profiles'
 const ACTIVE_PROFILE_KEY = 'mealie-connect-active-profile'
@@ -12,18 +14,38 @@ export interface AuthCredentials {
 }
 
 export const authService = {
-  listProfiles(): MealieProfile[] {
-    return storage.get<MealieProfile[]>(PROFILE_KEY) ?? []
+  async listProfiles(): Promise<MealieProfile[]> {
+    const storedProfiles = storage.get<Array<MealieProfile & { token?: string }>>(PROFILE_KEY) ?? []
+    const hydratedProfiles = await Promise.all(
+      storedProfiles.map(async (profile) => {
+        const storedToken = await credentialStore.getProfileToken(profile.id)
+        if (!storedToken && profile.token) {
+          await credentialStore.setProfileToken(profile.id, profile.token)
+        }
+
+        return {
+          ...profile,
+          token: storedToken ?? profile.token,
+        }
+      }),
+    )
+
+    if (storedProfiles.some((profile) => profile.token)) {
+      this.saveProfiles(hydratedProfiles)
+    }
+
+    return hydratedProfiles
   },
 
-  getActiveProfile(): MealieProfile | null {
+  async getActiveProfile(): Promise<MealieProfile | null> {
     const id = storage.get<string>(ACTIVE_PROFILE_KEY)
-    const profiles = this.listProfiles()
+    const profiles = await this.listProfiles()
     return profiles.find((profile) => profile.id === id) ?? profiles[0] ?? null
   },
 
   saveProfiles(profiles: MealieProfile[]): void {
-    storage.set(PROFILE_KEY, profiles)
+    const serializedProfiles = profiles.map(({ token: _token, ...profile }) => profile)
+    storage.set(PROFILE_KEY, serializedProfiles)
   },
 
   setActiveProfile(profileId: string): void {
@@ -56,14 +78,14 @@ export const authService = {
       authMethod: credentials.method,
       username: credentials.username,
       displayName: credentials.username ?? 'API token user',
-      token,
     }
 
-    const profiles = this.listProfiles()
+    await credentialStore.setProfileToken(profileId, token)
+    const profiles = await this.listProfiles()
     const next = [...profiles, profile]
     this.saveProfiles(next)
     this.setActiveProfile(profileId)
-    return profile
+    return { ...profile, token }
   },
 
   signOut(): void {
@@ -109,23 +131,4 @@ function createClient({ server, token }: { server: string; token?: string }) {
       return (await response.json()) as { username?: string }
     },
   }
-}
-
-const storage = {
-  get<T>(key: string): T | null {
-    try {
-      const value = localStorage.getItem(key)
-      return value ? (JSON.parse(value) as T) : null
-    } catch {
-      return null
-    }
-  },
-
-  set<T>(key: string, value: T): void {
-    localStorage.setItem(key, JSON.stringify(value))
-  },
-
-  remove(key: string): void {
-    localStorage.removeItem(key)
-  },
 }

@@ -1,4 +1,5 @@
 import type { ThemeName } from '../types/mealie'
+import { applyNativeTheme } from './native'
 
 const THEME_KEY = 'mealie-connect-theme'
 export const DEFAULT_THEME: ThemeName = 'purple'
@@ -36,11 +37,13 @@ export function setTheme(theme: ThemeName): void {
     // Ignore storage failures (e.g. private browsing); theme still applies for this session.
   }
   applyTheme(theme)
+  void applyNativeTheme(theme)
 }
 
 /** Reads and applies the persisted theme. Call once on app startup. */
 export function initTheme(): ThemeName {
   const theme = getStoredTheme()
   applyTheme(theme)
+  void applyNativeTheme(theme)
   return theme
 }

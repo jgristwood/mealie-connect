@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#7c3aed" />
     <meta
       name="description"
@@ -10,9 +10,50 @@
     />
     <link rel="icon" type="image/svg+xml" href="/mealie-connect-logo.svg" />
     <title>Mealie Connect</title>
+    <style>
+      body {
+        background: #f5f1eb;
+      }
+
+      .app-loading-shell {
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 32px 24px;
+        background: #f5f1eb;
+        color: #241f29;
+        font-family: "Avenir Next", "Segoe UI", sans-serif;
+      }
+
+      .app-loading-brand {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+        text-align: center;
+      }
+
+      .app-loading-brand img {
+        width: 84px;
+        height: 84px;
+      }
+
+      .app-loading-brand span {
+        font-size: 1.25rem;
+        font-weight: 800;
+        letter-spacing: 0.02em;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="app-loading-shell" aria-label="Loading Mealie Connect">
+        <div class="app-loading-brand">
+          <img src="/mealie-connect-logo.svg" alt="" />
+          <span>Mealie Connect</span>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

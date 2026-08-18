@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { BrowserRouter, Link, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { App as CapacitorApp } from '@capacitor/app'
+import { KeepAwake } from '@capacitor-community/keep-awake'
+import type { PluginListenerHandle } from '@capacitor/core'
+import { Network } from '@capacitor/network'
 import { authService } from './services/auth/auth-service'
 import { MealieClient, groupMealPlanEntriesIntoSlots, type MealPlanSlot } from './services/mealie/mealie-client'
 import { THEMES, getStoredTheme, setTheme as persistTheme } from './lib/theme'
+import { isAndroidPlatform, isExternalHttpUrl, isNativePlatform, openExternalUrl, removeNativeListener } from './lib/native'
 import defaultRecipeImage from './assets/default-image.jpg'
 import type {
   AuthMethod,
@@ -27,6 +32,63 @@ const MEAL_TYPE_LABELS: Record<string, string> = {
   dinner: 'Dinner',
 }
 
+type ConnectivityState = 'online' | 'offline' | 'server-unreachable' | 'auth-failed'
+
+function useModalEscapeToClose(onClose: () => void): void {
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      onClose()
+    }
+
+    window.addEventListener('keydown', listener)
+    return () => window.removeEventListener('keydown', listener)
+  }, [onClose])
+}
+
+function NativeConnectionStatus({ state }: { state: ConnectivityState | null }) {
+  if (!state) return null
+
+  const config: Record<ConnectivityState, { label: string; className: string }> = {
+    online: { label: 'Online', className: 'native-connection-status online' },
+    offline: { label: 'Offline', className: 'native-connection-status offline' },
+    'server-unreachable': { label: 'Server unreachable', className: 'native-connection-status warning' },
+    'auth-failed': { label: 'Authentication required', className: 'native-connection-status warning' },
+  }
+
+  return <div className={config[state].className}>{config[state].label}</div>
+}
+
+function ExternalLink({
+  href,
+  children,
+  className,
+}: {
+  href: string
+  children: ReactNode
+  className?: string
+}) {
+  const handleClick = async (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!isExternalHttpUrl(href)) return
+    if (!isNativePlatform()) return
+    event.preventDefault()
+    await openExternalUrl(href)
+  }
+
+  return (
+    <a
+      className={className}
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      onClick={(event) => void handleClick(event)}
+    >
+      {children}
+    </a>
+  )
+}
+
 const normalizeInstructionSteps = (recipe: MealieRecipeDetail): MealieInstructionStep[] => {
   if (Array.isArray((recipe as MealieRecipeDetail & { steps?: MealieInstructionStep[] }).steps)) {
     return (recipe as MealieRecipeDetail & { steps?: MealieInstructionStep[] }).steps ?? []
@@ -45,17 +107,32 @@ function AppHeader({ activeProfile, showHomeButton = true }: { activeProfile: Me
 
   return (
     <header className="app-header">
-      <div className="brand-cluster">
-        <Link className="brand-lockup compact" to="/" aria-label="Mealie Connect home">
-          <img className="brand-logo" src="/mealie-connect-logo.svg" alt="" />
-          <span>Mealie Connect</span>
-        </Link>
-        {activeProfile ? (
-          <Link className="header-profile-link" to="/setup">
-            <span className="account-dot" aria-hidden="true" />
-            <span>{activeProfile.displayName ?? activeProfile.username ?? 'Account'}</span>
+      <div className="app-header-top">
+        <div className="app-header-leading">
+          {activeProfile && !isSettingsPage ? (
+            <Link className="header-settings-button" to="/settings" aria-label="Open settings">
+              <span className="header-settings-icon" aria-hidden="true">⚙</span>
+              <span className="header-settings-label">Settings</span>
+            </Link>
+          ) : (
+            <span className="header-action-spacer" aria-hidden="true" />
+          )}
+        </div>
+        <div className="brand-cluster">
+          <Link className="brand-lockup compact" to="/" aria-label="Mealie Connect home">
+            <img className="brand-logo" src="/mealie-connect-logo.svg" alt="" />
+            <span>Mealie Connect</span>
           </Link>
-        ) : null}
+          {activeProfile ? (
+            <Link className="header-profile-link" to="/setup">
+              <span className="account-dot" aria-hidden="true" />
+              <span>{activeProfile.displayName ?? activeProfile.username ?? 'Account'}</span>
+            </Link>
+          ) : null}
+        </div>
+        <div className="app-header-trailing">
+          <Link className="header-import-button" to="/import" aria-label="Import a recipe" title="Import a recipe">+</Link>
+        </div>
       </div>
       {activeProfile ? (
         <nav className={showHomeButton ? 'main-nav has-home' : 'main-nav'} aria-label="Primary navigation">
@@ -66,10 +143,6 @@ function AppHeader({ activeProfile, showHomeButton = true }: { activeProfile: Me
           <Link to="/shopping">Shopping list</Link>
         </nav>
       ) : null}
-      {activeProfile && !isSettingsPage ? (
-        <Link className="header-settings-button" to="/settings" aria-label="Open settings">Settings</Link>
-      ) : null}
-      <Link className="header-import-button" to="/import" aria-label="Import a recipe" title="Import a recipe">+</Link>
     </header>
   )
 }
@@ -136,16 +209,109 @@ function App() {
   const [loadingMoreRecipes, setLoadingMoreRecipes] = useState(false)
   const [hasMoreRecipes, setHasMoreRecipes] = useState(false)
   const [error, setError] = useState('')
+  const [networkConnected, setNetworkConnected] = useState(true)
+  const [connectivityState, setConnectivityState] = useState<ConnectivityState | null>(null)
 
-  const loadProfiles = () => {
-    const nextProfiles = authService.listProfiles()
+  const loadProfiles = useCallback(async () => {
+    const [nextProfiles, nextActiveProfile] = await Promise.all([
+      authService.listProfiles(),
+      authService.getActiveProfile(),
+    ])
     setProfiles(nextProfiles)
-    setActiveProfile(authService.getActiveProfile())
-  }
+    setActiveProfile(nextActiveProfile)
+  }, [])
 
   useEffect(() => {
-    loadProfiles()
+    void loadProfiles()
+  }, [loadProfiles])
+
+  useEffect(() => {
+    if (!isNativePlatform()) return
+
+    let statusListener: PluginListenerHandle | undefined
+    let mounted = true
+
+    const initializeNetwork = async () => {
+      const status = await Network.getStatus()
+      if (mounted) {
+        setNetworkConnected(status.connected)
+      }
+      statusListener = await Network.addListener('networkStatusChange', (nextStatus) => {
+        setNetworkConnected(nextStatus.connected)
+      })
+    }
+
+    void initializeNetwork()
+
+    return () => {
+      mounted = false
+      void removeNativeListener(statusListener)
+    }
   }, [])
+
+  useEffect(() => {
+    if (!isNativePlatform() || !isAndroidPlatform()) return
+
+    let backButtonListener: PluginListenerHandle | undefined
+
+    const initializeBackButton = async () => {
+      backButtonListener = await CapacitorApp.addListener('backButton', () => {
+        if (document.querySelector('.modal-overlay')) {
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+          return
+        }
+
+        if (window.location.pathname !== '/') {
+          window.history.back()
+          return
+        }
+
+        void CapacitorApp.exitApp()
+      })
+    }
+
+    void initializeBackButton()
+    return () => {
+      void removeNativeListener(backButtonListener)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isNativePlatform()) return
+
+    if (!networkConnected) {
+      setConnectivityState('offline')
+      return
+    }
+
+    if (!activeProfile) {
+      setConnectivityState('online')
+      return
+    }
+
+    let cancelled = false
+
+    const checkProfileConnectivity = async () => {
+      const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
+      try {
+        await client.getHealth()
+        await client.getCurrentUser()
+        if (!cancelled) setConnectivityState('online')
+      } catch (nextError) {
+        const message = nextError instanceof Error ? nextError.message.toLowerCase() : ''
+        if (!cancelled) {
+          setConnectivityState(
+            message.includes('sign in again') || message.includes('authentication') ? 'auth-failed' : 'server-unreachable',
+          )
+        }
+      }
+    }
+
+    void checkProfileConnectivity()
+    return () => {
+      cancelled = true
+    }
+  }, [activeProfile, networkConnected])
 
   useEffect(() => {
     if (!activeProfile) {
@@ -242,16 +408,18 @@ function App() {
       password,
       token,
     })
-
-    const nextProfiles = authService.listProfiles()
-    setProfiles(nextProfiles)
+    await loadProfiles()
     setActiveProfile(profile)
   }
 
   const signOut = () => {
     authService.signOut()
-    setActiveProfile(null)
-    loadProfiles()
+    void loadProfiles()
+  }
+
+  const selectProfile = (profile: MealieProfile) => {
+    authService.setActiveProfile(profile.id)
+    setActiveProfile(profile)
   }
 
   return (
@@ -275,7 +443,7 @@ function App() {
             <SettingsPage
               activeProfile={activeProfile}
               profiles={profiles}
-              onSelectProfile={setActiveProfile}
+              onSelectProfile={selectProfile}
               onSignOut={signOut}
             />
           }
@@ -336,6 +504,7 @@ function App() {
           element={<DinnerRoulettePage activeProfile={activeProfile} />}
         />
       </Routes>
+      <NativeConnectionStatus state={connectivityState} />
     </BrowserRouter>
   )
 }
@@ -504,6 +673,7 @@ function SetupPage({
   profiles: MealieProfile[]
   onBack: () => void
 }) {
+  const navigate = useNavigate()
   const [server, setServer] = useState('https://mealie.example.com')
   const [method, setMethod] = useState<AuthMethod>('password')
   const [username, setUsername] = useState('')
@@ -553,7 +723,7 @@ function SetupPage({
         await onSignIn(server, method, undefined, undefined, token)
       }
 
-      window.location.href = '/'
+      navigate('/')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to connect to Mealie.')
     } finally {
@@ -659,6 +829,10 @@ function SetupPage({
                   The proxy runs locally on your computer and forwards requests to your actual Mealie server while
                   adding the necessary CORS headers.
                 </p>
+                <p className="small-text">
+                  In the Android app, Mealie requests use Capacitor&apos;s native HTTP bridge, so browser CORS rules do
+                  not apply there. This proxy is only for the web app running in a browser.
+                </p>
               </div>
             </section>
           )}
@@ -693,6 +867,7 @@ function SetupPage({
             <li>Check that your Mealie server URL is correct (include the protocol: http:// or https://)</li>
             <li>Verify your browser can reach the server (try opening the URL in a new tab)</li>
             <li>Ensure the Mealie server is running and accessible from your network</li>
+            <li>If you are testing the web app in a browser, your Mealie server or reverse proxy must allow CORS for that browser origin</li>
             <li>Check browser console (F12) for detailed error messages</li>
             <li>If using a self-hosted server behind a reverse proxy, ensure CORS is properly configured</li>
           </ul>
@@ -709,6 +884,7 @@ function SetupPage({
 }
 
 function ImportRecipePage({ activeProfile }: { activeProfile: MealieProfile | null }) {
+  const navigate = useNavigate()
   const [importUrl, setImportUrl] = useState('')
   const [importing, setImporting] = useState(false)
   const [message, setMessage] = useState('')
@@ -739,7 +915,7 @@ function ImportRecipePage({ activeProfile }: { activeProfile: MealieProfile | nu
       const importedRecipe = await client.importRecipeFromUrl(parsedUrl.toString())
       setImportUrl('')
       setMessage(`Imported “${importedRecipe.name}”.`)
-      window.location.href = `/recipes/${importedRecipe.slug || importedRecipe.id}`
+      navigate(`/recipes/${importedRecipe.slug || importedRecipe.id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to import recipe.')
     } finally {
@@ -1120,6 +1296,11 @@ function RecipeDetailPage({ activeProfile }: { activeProfile: MealieProfile | nu
                 {recipe.cookTime ? <span>{recipe.cookTime} cook</span> : null}
                 {recipe.servings ? <span>{recipe.servings} servings</span> : null}
               </div>
+              {recipe.url ? (
+                <ExternalLink className="text-link" href={recipe.url}>
+                  Open original recipe source
+                </ExternalLink>
+              ) : null}
               <div className="recipe-detail-actions">
                 <button type="button" className="secondary-button" onClick={() => setShowShoppingModal(true)}>Add Ingredients to Shopping List</button>
                 <button type="button" className="secondary-button" onClick={() => setShowMealPlanModal(true)}>Add to Meal Plan</button>
@@ -1213,6 +1394,19 @@ function CookModePage({ activeProfile }: { activeProfile: MealieProfile | null }
       .catch((err: Error) => setError(err.message))
       .finally(() => setLoading(false))
   }, [activeProfile, slug])
+
+  useEffect(() => {
+    if (!isNativePlatform()) return
+
+    let released = false
+    void KeepAwake.keepAwake()
+
+    return () => {
+      if (released) return
+      released = true
+      void KeepAwake.allowSleep()
+    }
+  }, [])
 
   const steps = recipe ? normalizeInstructionSteps(recipe) : []
   const current = steps[currentStep]
@@ -2042,6 +2236,7 @@ function RecipePickerModal({
   onSelect: (recipe: MealieRecipeSummary) => void
   onClose: () => void
 }) {
+  useModalEscapeToClose(onClose)
   const [search, setSearch] = useState('')
   const [categories, setCategories] = useState<MealieCategory[]>([])
   const [tags, setTags] = useState<MealieTag[]>([])
@@ -2490,6 +2685,7 @@ function AddToMealPlanModal({
   recipe: MealieRecipeSummary
   onClose: () => void
 }) {
+  useModalEscapeToClose(onClose)
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [mealType, setMealType] = useState<PlannableMealType>('dinner')
   const [submitting, setSubmitting] = useState(false)
@@ -2568,6 +2764,7 @@ function AddIngredientsToShoppingListModal({
   recipeName: string
   onClose: () => void
 }) {
+  useModalEscapeToClose(onClose)
   const [lists, setLists] = useState<MealieShoppingList[]>([])
   const [loadingLists, setLoadingLists] = useState(true)
   const [listError, setListError] = useState('')
