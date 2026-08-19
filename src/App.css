@@ -803,6 +803,14 @@ html.native-android .app-header {
   color: var(--primary-strong);
 }
 
+.settings-version {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

@@ -39,8 +39,12 @@ export const authService = {
 
   async getActiveProfile(): Promise<MealieProfile | null> {
     const id = storage.get<string>(ACTIVE_PROFILE_KEY)
+    if (!id) {
+      return null
+    }
+
     const profiles = await this.listProfiles()
-    return profiles.find((profile) => profile.id === id) ?? profiles[0] ?? null
+    return profiles.find((profile) => profile.id === id) ?? null
   },
 
   saveProfiles(profiles: MealieProfile[]): void {

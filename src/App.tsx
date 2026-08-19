@@ -25,6 +25,7 @@ import type {
 import { PLANNABLE_MEAL_TYPES } from './types/mealie'
 import './App.css'
 
+const APP_VERSION = '0.5.1'
 const RECIPES_PAGE_SIZE = 50
 const MEAL_TYPE_LABELS: Record<string, string> = {
   breakfast: 'Breakfast',
@@ -414,6 +415,7 @@ function App() {
 
   const signOut = () => {
     authService.signOut()
+    setActiveProfile(null)
     void loadProfiles()
   }
 
@@ -450,7 +452,14 @@ function App() {
         />
         <Route
           path="/setup"
-          element={<SetupPage onSignIn={signIn} profiles={profiles} onBack={() => window.history.back()} />}
+          element={
+            <SetupPage
+              onSignIn={signIn}
+              profiles={profiles}
+              onBack={() => window.history.back()}
+              onSelectProfile={selectProfile}
+            />
+          }
         />
         <Route path="/import" element={<ImportRecipePage activeProfile={activeProfile} />} />
         <Route
@@ -591,6 +600,10 @@ function HomePage({
   )
 }
 
+function AppVersionLabel() {
+  return <p className="settings-version">App version: {APP_VERSION}</p>
+}
+
 function SettingsPage({
   activeProfile,
   profiles,
@@ -611,6 +624,7 @@ function SettingsPage({
           <h1>Settings</h1>
           <p>No active Mealie account is connected.</p>
           <Link className="primary-button" to="/setup">Connect to Mealie</Link>
+          <AppVersionLabel />
         </section>
       </main>
     )
@@ -653,6 +667,7 @@ function SettingsPage({
         </div>
 
         <button type="button" className="text-button danger-text" onClick={onSignOut}>Sign out</button>
+        <AppVersionLabel />
       </section>
     </main>
   )
@@ -662,6 +677,7 @@ function SetupPage({
   onSignIn,
   profiles,
   onBack,
+  onSelectProfile,
 }: {
   onSignIn: (
     server: string,
@@ -672,6 +688,7 @@ function SetupPage({
   ) => Promise<void>
   profiles: MealieProfile[]
   onBack: () => void
+  onSelectProfile: (profile: MealieProfile) => void
 }) {
   const navigate = useNavigate()
   const [server, setServer] = useState('https://mealie.example.com')
@@ -849,10 +866,18 @@ function SetupPage({
           <h2>Profiles on this device</h2>
           <div className="profile-list compact">
             {profiles.map((profile) => (
-              <div key={profile.id} className="profile-summary">
+              <button
+                key={profile.id}
+                type="button"
+                className="profile-summary"
+                onClick={() => {
+                  onSelectProfile(profile)
+                  navigate('/')
+                }}
+              >
                 <strong>{profile.displayName ?? profile.username ?? profile.name}</strong>
                 <span>{profile.server}</span>
-              </div>
+              </button>
             ))}
           </div>
         </section>
