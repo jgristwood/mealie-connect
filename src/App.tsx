@@ -528,7 +528,7 @@ function HomePage({
 
       <section className="home-intro">
         <p className="eyebrow">Your cooking space</p>
-        <h1>{activeProfile ? 'What are you cooking this week?' : 'A calmer way to cook from your Mealie library.'}</h1>
+        <h1>{activeProfile ? 'What are you cooking this week?' : 'A calmer way to cook from your Mealie library starts here.'}</h1>
         <p className="intro-copy">
           {activeProfile ? 'Find something familiar, make a plan, or let dinner surprise you.' : 'Connect your self-hosted Mealie server and bring your recipes into focus.'}
         </p>

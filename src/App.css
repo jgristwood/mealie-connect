@@ -129,6 +129,7 @@
 
 * {
   box-sizing: border-box;
+  min-width: 0;
 }
 
 html,
@@ -137,10 +138,58 @@ body,
   margin: 0;
   min-height: 100%;
   min-height: 100vh;
+  width: 100%;
+  height: auto;
   background: var(--background);
   color: var(--text);
   font-family: 'Avenir Next', 'Segoe UI', sans-serif;
   transition: background-color 160ms ease, color 160ms ease;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: auto;
+  touch-action: pan-y;
+}
+
+img,
+svg,
+video {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+a,
+button,
+input,
+textarea,
+select {
+  max-width: 100%;
+}
+
+body,
+button,
+input,
+textarea,
+select {
+  text-wrap: pretty;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+p,
+li,
+span,
+a,
+label,
+button,
+input,
+textarea,
+select {
+  overflow-wrap: anywhere;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -168,6 +217,7 @@ button {
 }
 
 .app-shell {
+  width: min(100%, var(--content-width));
   max-width: var(--content-width);
   margin: 0 auto;
   padding: 34px 24px 96px;
@@ -217,7 +267,7 @@ html.native-android .app-header {
   justify-self: center;
   gap: 6px;
   min-width: 0;
-  width: fit-content;
+  width: min(100%, 420px);
   margin-inline: auto;
 }
 
@@ -294,13 +344,13 @@ html.native-android .app-header {
     border-radius: 999px;
     background: var(--surface);
     color: var(--primary-strong);
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  line-height: 1;
-  white-space: nowrap;
-  text-decoration: none;
-  transition: background var(--ease), border-color var(--ease), transform var(--ease);
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    line-height: 1;
+    white-space: nowrap;
+    text-decoration: none;
+    transition: background var(--ease), border-color var(--ease), transform var(--ease);
 }
 
 .header-settings-icon {
@@ -805,8 +855,44 @@ html.native-android .app-header {
     grid-template-columns: 32px minmax(0, 1fr) 32px;
   }
 
+  .header-settings-button {
+    white-space: normal;
+  }
+
   .header-action-spacer {
     min-width: 32px;
+  }
+}
+
+@media (max-width: 480px) {
+  .app-header-top {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+  }
+
+  .app-header-leading {
+    min-width: 0;
+  }
+
+  .header-settings-button {
+    min-width: 0;
+    padding-inline: 10px;
+  }
+
+  .header-action-spacer {
+    display: none;
+  }
+
+  .main-nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .main-nav a {
+    justify-content: center;
+    width: 100%;
+    text-align: center;
   }
 }
 
@@ -856,7 +942,7 @@ html.native-android .app-header {
   margin: 0;
   font-size: clamp(1.35rem, 2.4vw, 2rem);
   line-height: 1.1;
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .eyebrow {
@@ -1381,9 +1467,10 @@ select:focus {
 }
 
 .recent-recipe-item strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .recent-recipe-item span {
@@ -2071,8 +2158,23 @@ select:focus {
 
 @media (max-width: 720px) {
   .app-header-top {
-    grid-template-columns: 36px minmax(0, 1fr) 36px;
+    grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 10px;
+  }
+
+  .brand-cluster {
+    width: 100%;
+  }
+
+  .brand-lockup.compact {
+    white-space: normal;
+  }
+
+  .header-profile-link {
+    max-width: 100%;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
   }
 
   .main-nav {
@@ -2092,7 +2194,9 @@ select:focus {
   }
 
   .home-intro h1 {
+    max-width: 100%;
     font-size: clamp(2.35rem, 12vw, 3.5rem);
+    overflow-wrap: anywhere;
   }
 
   .home-feature {
@@ -2136,7 +2240,7 @@ select:focus {
 
 .page-intro {
   max-width: 700px;
-  overflow: hidden;
+  overflow: visible;
   padding: 62px 0 38px;
 }
 
@@ -2383,7 +2487,8 @@ select:focus {
 
   .page-intro h1 {
     font-size: 1.8rem;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .page-empty {
@@ -2909,9 +3014,10 @@ select:focus {
   .list-row h3,
   .setup-intro h1 {
     max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .detail-hero .detail-summary h2,
@@ -2936,17 +3042,19 @@ select:focus {
 
 .home-intro h1 {
   font-size: clamp(2.5rem, 4vw, 3.4rem);
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .home-intro {
-  overflow: hidden;
+  overflow: visible;
 }
 
 .home-feature .feature-copy h2 {
   max-width: none;
   font-size: clamp(1.7rem, 2.6vw, 2.25rem);
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .home-feature,
@@ -2955,7 +3063,7 @@ select:focus {
 }
 
 .home-feature {
-  overflow: hidden;
+  overflow: visible;
 }
 
 .home-recent .section-heading h2,
@@ -2963,13 +3071,15 @@ select:focus {
 .import-strip h2 {
   font-size: 1.9rem;
   line-height: 1.1;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .home-recipe-grid .recipe-card h3 {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 720px) {
@@ -2977,13 +3087,9 @@ select:focus {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  main :is(h1, h2, h3, h4, p, small, strong, label) {
-    max-width: 90%;
-  }
-
   .home-intro h1 {
     font-size: 1.8rem;
-    max-width: 90%;
+    max-width: 100%;
     overflow: visible;
     text-overflow: clip;
     white-space: normal;
@@ -2991,7 +3097,7 @@ select:focus {
 
   .home-feature .feature-copy h2 {
     font-size: 1.45rem;
-    max-width: 90%;
+    max-width: 100%;
     overflow: visible;
     text-overflow: clip;
     white-space: normal;
@@ -3011,37 +3117,39 @@ select:focus {
     width: 100%;
     max-width: 100%;
     overflow-x: hidden;
+   overflow-y: auto;
   }
 
   *,
   *::before,
   *::after {
-    min-width: 0;
+   min-width: 0;
   }
 
   .app-shell,
   .cook-shell {
-    width: 100%;
-    max-width: 100%;
-    min-width: 0;
+   width: 100%;
+   max-width: 100%;
+   min-width: 0;
   }
 
   main :is(h1, h2, h3, h4, p, small, strong, label, a, span) {
-    max-width: 90%;
-    overflow-wrap: anywhere;
+   max-width: 100%;
+   overflow-wrap: anywhere;
+   word-break: break-word;
   }
 
   main :is(h1, h2, h3, h4) {
-    overflow: visible;
-    text-overflow: clip;
-    white-space: normal;
+   overflow: visible;
+   text-overflow: clip;
+   white-space: normal;
   }
 
   main img,
   main svg,
   main video,
   main canvas {
-    max-width: 100%;
+   max-width: 100%;
   }
 
   .app-header,
@@ -3057,66 +3165,70 @@ select:focus {
   .setup-form,
   .setup-secondary,
   .import-strip {
-    min-width: 0;
-    max-width: 100%;
+   min-width: 0;
+   max-width: 100%;
   }
 
   .app-header {
-    width: 100%;
-    max-width: 100%;
-    margin-left: 0;
-    padding: calc(8px + env(safe-area-inset-top, 0px)) 0 18px;
-    gap: 14px;
+   width: 100%;
+   max-width: 100%;
+   margin-left: 0;
+   padding: calc(8px + env(safe-area-inset-top, 0px)) 0 18px;
+   gap: 14px;
   }
 
   .app-header-top {
-    width: 100%;
-    gap: 8px;
+   width: 100%;
+   gap: 8px;
   }
 
   .brand-cluster {
-    width: fit-content;
-    max-width: 220px;
+   width: min(100%, 220px);
+   max-width: 220px;
   }
 
   .main-nav {
-    width: 100%;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 4px;
-    margin-top: 0;
-    padding-top: 0;
+   width: 100%;
+   display: grid;
+   grid-template-columns: repeat(2, minmax(0, 1fr));
+   gap: 4px;
+   margin-top: 0;
+   padding-top: 0;
   }
 
-   .main-nav.has-home {
-     grid-template-columns: repeat(2, minmax(0, 1fr));
-   }
+  .main-nav.has-home {
+   grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 
-   .main-nav a {
-     width: 100%;
-    max-width: none;
-    min-width: 0;
-    justify-content: center;
-    padding-left: 4px;
-    padding-right: 4px;
-    font-size: 0.7rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .main-nav a {
+   width: 100%;
+   max-width: none;
+   min-width: 0;
+   justify-content: center;
+   padding-left: 4px;
+   padding-right: 4px;
+   font-size: 0.7rem;
+   overflow: visible;
+   text-overflow: clip;
+   white-space: normal;
+   line-height: 1.25;
   }
 
   .brand-lockup.compact {
-    font-size: 1.05rem;
+   font-size: 1.05rem;
   }
 
   .brand-lockup.compact .brand-logo {
-    width: 60px;
-    height: 60px;
+   width: 60px;
+   height: 60px;
   }
 
   .header-profile-link {
-    justify-content: center;
-    text-align: center;
+   justify-content: center;
+   text-align: center;
+   overflow: visible;
+   text-overflow: clip;
+   white-space: normal;
   }
 
   .app-header-leading,
@@ -3174,8 +3286,9 @@ select:focus {
   .random-hero h2,
   .cook-panel h2,
   .setup-intro h1 {
-    max-width: 90%;
+    max-width: 100%;
     white-space: normal;
+    overflow-wrap: anywhere;
   }
 
   .library-recipe-card-link,
