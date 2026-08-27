@@ -2017,8 +2017,8 @@ function DinnerRoulettePage({ activeProfile }: { activeProfile: MealieProfile | 
 
             <div className="roulette-roll-section">
               <button type="button" className="roulette-roll-btn" onClick={() => void roll()} disabled={rolling}>
-                <span className={rolling ? 'roulette-dice rolling' : 'roulette-dice'} aria-hidden="true">dice</span>
-                {rolling ? 'Rolling...' : 'ROLL'}
+                <span className={rolling ? 'roulette-dice rolling' : 'roulette-dice'}><Dice5 size={24} /></span>
+                {rolling ? 'Rolling...' : 'Roll'}
               </button>
             </div>
 
