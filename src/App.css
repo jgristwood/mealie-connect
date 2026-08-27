@@ -234,13 +234,16 @@ html.native-android .app-header {
   align-items: center;
   gap: var(--sp-2);
   text-decoration: none;
-  flex-shrink: 0;
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: calc(100% - 148px);
 }
 
 .header-brand-logo {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   filter: var(--logo-filter);
+  flex-shrink: 0;
 }
 
 .header-brand-name {
@@ -248,6 +251,11 @@ html.native-android .app-header {
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--text-primary);
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .header-nav {
@@ -408,10 +416,12 @@ html.native-android .app-header {
 .mobile-nav-inner {
   display: flex;
   align-items: stretch;
-  justify-content: space-around;
+  justify-content: space-evenly;
   height: 100%;
-  max-width: 480px;
+  width: 100%;
+  max-width: 100%;
   margin: 0 auto;
+  padding: 0 6px;
 }
 
 .mobile-nav-item {
@@ -421,7 +431,7 @@ html.native-android .app-header {
   justify-content: center;
   gap: 3px;
   flex: 1;
-  padding: 6px 2px;
+  padding: 6px 0;
   text-decoration: none;
   color: var(--text-muted);
   font-size: 0.63rem;
@@ -429,6 +439,8 @@ html.native-android .app-header {
   letter-spacing: 0.02em;
   transition: color var(--ease-fast);
   min-height: 44px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .mobile-nav-item.active {
@@ -438,6 +450,14 @@ html.native-android .app-header {
 .mobile-nav-item svg {
   width: 21px;
   height: 21px;
+}
+
+.mobile-nav-item span {
+  width: 100%;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---------------------------------------------------------
@@ -2551,7 +2571,14 @@ html.native-android .app-header {
 @media (max-width: 620px) {
   .page-content { padding-left: var(--sp-4); padding-right: var(--sp-4); }
   .app-header-inner { padding: 0 var(--sp-4); }
-  .header-brand-name { display: none; }
+  .header-brand-name {
+    font-size: 0.84rem;
+    max-width: 160px;
+  }
+  .header-brand-logo {
+    width: 40px;
+    height: 40px;
+  }
   .meal-plan-week-view { grid-template-columns: repeat(3, minmax(0,1fr)); }
   .roulette-filters { grid-template-columns: 1fr; padding: var(--sp-4); }
   .shopping-add-form { flex-direction: column; }
@@ -2567,6 +2594,12 @@ html.native-android .app-header {
 
 @media (max-width: 380px) {
   .recipe-grid { grid-template-columns: 1fr; }
+  .header-brand-name {
+    max-width: 100px;
+  }
+  .mobile-nav-item {
+    font-size: 0.58rem;
+  }
 }
 
 @media (min-width: 1400px) {

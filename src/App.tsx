@@ -39,7 +39,7 @@ import type {
 import { PLANNABLE_MEAL_TYPES } from './types/mealie'
 import './App.css'
 
-const APP_VERSION = '0.7.1'
+const APP_VERSION = '0.7.5'
 const RECIPES_PAGE_SIZE = 50
 const MEAL_TYPE_LABELS: Record<string, string> = {
   breakfast: 'Breakfast',
@@ -2245,3 +2245,7 @@ function AddIngredientsToShoppingListModal({ activeProfile, recipeId, recipeName
 }
 
 export default App
+
+
+
+
