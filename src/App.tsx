@@ -1028,7 +1028,7 @@ function RecipesPage({ activeProfile, recipes, categories, tags, searchTerm, set
 
             {showBackToTop ? (
               <button type="button" className="back-to-top" aria-label="Back to top" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
-                up Top
+                Back to Top
               </button>
             ) : null}
           </>
