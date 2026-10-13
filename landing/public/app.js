@@ -45,55 +45,91 @@
     placeholder.replaceWith(svg);
   });
 
+
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const finePointer = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+
+  // ---- Mobile menu --------------------------------------------------------
   const header = document.getElementById('site-header');
   const menuButton = document.getElementById('menu-button');
   const mobileMenu = document.getElementById('mobile-menu');
   let menuOpen = false;
+
+  const drawMenuIcon = (open) => {
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('width', '22'); svg.setAttribute('height', '22'); svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round'); svg.setAttribute('aria-hidden', 'true');
+    svg.innerHTML = icons[open ? 'x' : 'menu'];
+    menuButton.replaceChildren(svg);
+  };
 
   const setMenu = (open) => {
     menuOpen = open;
     mobileMenu.hidden = !open;
     menuButton.setAttribute('aria-expanded', String(open));
     menuButton.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
-    menuButton.innerHTML = '';
-    const span = document.createElement('span');
-    span.dataset.icon = open ? 'x' : 'menu';
-    span.dataset.size = '22';
-    menuButton.appendChild(span);
-    const name = span.dataset.icon;
-    const svg = document.createElementNS(NS, 'svg');
-    svg.setAttribute('width', '22'); svg.setAttribute('height', '22'); svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-width', '2');
-    svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round'); svg.setAttribute('aria-hidden', 'true');
-    svg.innerHTML = icons[name]; span.replaceWith(svg);
+    drawMenuIcon(open);
     document.body.style.overflow = open ? 'hidden' : '';
   };
 
   menuButton.addEventListener('click', () => setMenu(!menuOpen));
-  document.querySelectorAll('.mobile-link').forEach((a) => a.addEventListener('click', () => setMenu(false)));
+  document.querySelectorAll('.mobile-link, .mobile-menu-actions a').forEach((a) => a.addEventListener('click', () => setMenu(false)));
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && menuOpen) { setMenu(false); menuButton.focus(); } });
+  window.matchMedia('(min-width: 861px)').addEventListener('change', (query) => { if (query.matches && menuOpen) setMenu(false); });
 
-  const updateHeader = () => {
-    const scrolled = window.scrollY > 8;
-    header.classList.toggle('bg-charcoal-950/85', scrolled);
-    header.classList.toggle('backdrop-blur-md', scrolled);
-    header.classList.toggle('border-b', scrolled);
-    header.classList.toggle('border-cream-50/10', scrolled);
-    header.classList.toggle('bg-transparent', !scrolled);
-  };
+  // ---- Header: glass pill once the page scrolls ---------------------------
+  const updateHeader = () => header.classList.toggle('is-scrolled', window.scrollY > 12);
   updateHeader();
   window.addEventListener('scroll', updateHeader, { passive: true });
 
-  if ('IntersectionObserver' in window) {
+  // ---- Scroll reveals ------------------------------------------------------
+  const revealables = document.querySelectorAll('[data-reveal]');
+  if (reduceMotion || !('IntersectionObserver' in window)) {
+    revealables.forEach((el) => el.classList.add('is-visible'));
+  } else {
     const observer = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         if (entry.isIntersecting) {
-          entry.target.classList.add('reveal-visible');
+          entry.target.classList.add('is-visible');
           observer.unobserve(entry.target);
         }
       }
-    }, { threshold: 0.15 });
-    document.querySelectorAll('.reveal').forEach((el) => observer.observe(el));
-  } else {
-    document.querySelectorAll('.reveal').forEach((el) => el.classList.add('reveal-visible'));
+    }, { threshold: 0.12, rootMargin: '0px 0px -6% 0px' });
+    revealables.forEach((el) => observer.observe(el));
+  }
+
+  // ---- Parallax: elements drift as they pass through the viewport ---------
+  const parallaxItems = [...document.querySelectorAll('[data-parallax]')];
+  if (!reduceMotion && parallaxItems.length > 0) {
+    let ticking = false;
+    const update = () => {
+      ticking = false;
+      const viewport = window.innerHeight;
+      for (const el of parallaxItems) {
+        const rect = el.parentElement.getBoundingClientRect();
+        if (rect.bottom < -200 || rect.top > viewport + 200) continue;
+        const progress = rect.top + rect.height / 2 - viewport / 2;
+        const speed = Number(el.dataset.parallax) || 0;
+        el.style.translate = `0 ${(progress * speed).toFixed(1)}px`;
+      }
+    };
+    const request = () => { if (!ticking) { ticking = true; requestAnimationFrame(update); } };
+    window.addEventListener('scroll', request, { passive: true });
+    window.addEventListener('resize', request);
+    update();
+  }
+
+  // ---- Magnetic buttons (mouse only) ---------------------------------------
+  if (!reduceMotion && finePointer) {
+    document.querySelectorAll('[data-magnetic]').forEach((button) => {
+      button.addEventListener('pointermove', (event) => {
+        const rect = button.getBoundingClientRect();
+        const x = event.clientX - rect.left - rect.width / 2;
+        const y = event.clientY - rect.top - rect.height / 2;
+        button.style.transform = `translate(${x * 0.18}px, ${y * 0.28}px)`;
+      });
+      button.addEventListener('pointerleave', () => { button.style.transform = ''; });
+    });
   }
 })();
