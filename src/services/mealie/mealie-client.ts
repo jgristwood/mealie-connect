@@ -180,7 +180,6 @@ export class MealieClient {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ username, password }).toString(),
-      credentials: 'include',
     })
 
     if (!response.ok) {
@@ -255,7 +254,6 @@ export class MealieClient {
     try {
       const response = await fetch(`${this.baseUrl}/api/app/about`, {
         method: 'GET',
-        credentials: 'include',
       })
 
       if (!response.ok) {

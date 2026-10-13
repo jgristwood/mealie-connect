@@ -335,3 +335,19 @@ describe('MealieClient fixes', () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe('http://mealie.test/api/recipes?page=1&perPage=7&orderBy=created_at&orderDirection=desc')
   })
 })
+
+describe('MealieClient CORS compatibility', () => {
+  it('does not send cookies, so servers allowing any origin (*) still work', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({ version: '2.0' }))
+      .mockResolvedValueOnce(jsonResponse({ access_token: 'token' }))
+    const client = new MealieClient({ baseUrl: 'http://mealie.test' })
+
+    await client.testConnection()
+    await client.loginWithPassword('user', 'pass')
+
+    for (const [, init] of fetchMock.mock.calls) {
+      expect((init as RequestInit).credentials).toBeUndefined()
+    }
+  })
+})
