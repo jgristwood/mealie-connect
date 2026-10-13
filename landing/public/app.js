@@ -25,7 +25,9 @@
     'cloud-off': '<path d="M17.5 19H9a7 7 0 0 1-6.7-9M5.3 5.3A7 7 0 0 1 17 7h1a4 4 0 0 1 3.9 4.9M2 2l20 20"/>',
     smartphone: '<rect width="14" height="20" x="5" y="2" rx="2"/><path d="M12 18h.01"/>',
     android: '<path d="M8 5 6.5 2.5M16 5l1.5-2.5M5 10h14v8H5zM7 7h.01M17 7h.01M7 18v3M17 18v3M3 10v6M21 10v6"/>',
-    monitor: '<rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/>'
+    monitor: '<rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/>',
+    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+    moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
   };
 
   document.querySelectorAll('[data-icon]').forEach((placeholder) => {
@@ -77,6 +79,32 @@
   document.querySelectorAll('.mobile-link, .mobile-menu-actions a').forEach((a) => a.addEventListener('click', () => setMenu(false)));
   document.addEventListener('keydown', (event) => { if (event.key === 'Escape' && menuOpen) { setMenu(false); menuButton.focus(); } });
   window.matchMedia('(min-width: 861px)').addEventListener('change', (query) => { if (query.matches && menuOpen) setMenu(false); });
+
+  // ---- Light / dark toggle (light by default, choice remembered) ----------
+  const root = document.documentElement;
+  const themeToggle = document.getElementById('theme-toggle');
+  const themeColor = document.querySelector('meta[name="theme-color"]');
+  const applyTheme = (dark) => {
+    if (dark) root.dataset.theme = 'dark';
+    else delete root.dataset.theme;
+    const label = dark ? 'Switch to light mode' : 'Switch to dark mode';
+    themeToggle.setAttribute('aria-pressed', String(dark));
+    themeToggle.setAttribute('aria-label', label);
+    themeToggle.title = label;
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('width', '18'); svg.setAttribute('height', '18'); svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none'); svg.setAttribute('stroke', 'currentColor'); svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round'); svg.setAttribute('stroke-linejoin', 'round'); svg.setAttribute('aria-hidden', 'true');
+    svg.innerHTML = icons[dark ? 'sun' : 'moon'];
+    themeToggle.replaceChildren(svg);
+    if (themeColor) themeColor.setAttribute('content', dark ? '#12100e' : '#faf6ef');
+  };
+  applyTheme(root.dataset.theme === 'dark');
+  themeToggle.addEventListener('click', () => {
+    const dark = root.dataset.theme !== 'dark';
+    applyTheme(dark);
+    try { localStorage.setItem('mealie-connect-landing-theme', dark ? 'dark' : 'light'); } catch (error) { /* private mode */ }
+  });
 
   // ---- Header: glass pill once the page scrolls ---------------------------
   const updateHeader = () => header.classList.toggle('is-scrolled', window.scrollY > 12);

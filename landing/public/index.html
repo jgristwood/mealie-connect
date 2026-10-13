@@ -5,6 +5,10 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#faf6ef" />
+    <script>
+      // Apply a saved dark-mode choice before first paint (light is the default).
+      try { if (localStorage.getItem('mealie-connect-landing-theme') === 'dark') document.documentElement.dataset.theme = 'dark' } catch (error) {}
+    </script>
 
     <title>Mealie Connect, your Mealie cooking companion</title>
     <meta
@@ -28,8 +32,8 @@
     <meta name="twitter:image" content="/og-image.png" />
 
     <link rel="preload" href="/fonts/inter-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin />
-    <link rel="stylesheet" href="/styles.css?v=0.7.8" />
-    <script defer src="/app.js?v=0.7.8"></script>
+    <link rel="stylesheet" href="/styles.css?v=0.7.8b" />
+    <script defer src="/app.js?v=0.7.8b"></script>
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
@@ -38,7 +42,7 @@
     <header id="site-header" class="site-header">
       <div class="nav-shell">
         <a class="brand" href="#top" aria-label="Mealie Connect home">
-          <img class="brand-logo" src="/favicon.svg" alt="" width="34" height="34" />
+          <span class="brand-logo" aria-hidden="true"></span>
           <span>Mealie Connect</span>
         </a>
         <nav class="nav-links" aria-label="Primary">
@@ -49,6 +53,7 @@
           <a href="#cook-mode">Cook Mode</a>
         </nav>
         <div class="nav-actions">
+          <button id="theme-toggle" class="theme-toggle" type="button" aria-pressed="false" aria-label="Switch to dark mode" title="Switch to dark mode"><span data-icon="moon" data-size="18"></span></button>
           <a class="nav-text-link" href="https://github.com/jgristwood/mealie-connect" target="_blank" rel="noreferrer noopener">GitHub</a>
           <a class="btn btn-ghost btn-sm" href="/MealieConnect.apk" download="MealieConnect.apk">Download APK <span data-icon="download" data-size="16"></span></a>
           <a class="btn btn-primary btn-sm" href="https://mealie-connect.vercel.app/" target="_blank" rel="noreferrer noopener" data-magnetic>Open Mealie Connect</a>
@@ -422,7 +427,7 @@
     <footer class="site-footer">
       <div class="container footer-grid">
         <div>
-          <a class="brand" href="#top"><img class="brand-logo" src="/favicon.svg" alt="" width="34" height="34" /><span>Mealie Connect</span></a>
+          <a class="brand" href="#top"><span class="brand-logo" aria-hidden="true"></span><span>Mealie Connect</span></a>
           <p class="footer-tagline">Your Mealie cooking companion.</p>
         </div>
         <nav aria-label="Product">
