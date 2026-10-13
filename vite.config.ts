@@ -41,7 +41,7 @@ export default defineConfig(({ command, mode }) => {
       manifest: {
         name: 'Mealie Connect',
         short_name: 'Mealie Connect',
-        description: 'Mealie Connect — Your Mealie cooking companion',
+        description: 'Mealie Connect, your Mealie cooking companion',
         theme_color: '#faf6ef',
         background_color: '#faf6ef',
         display: 'standalone',
