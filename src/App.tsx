@@ -788,7 +788,9 @@ function SetupPage({ onSignIn, profiles, onBack, onSelectProfile }: {
 }) {
   const navigate = useNavigate()
   const location = useLocation()
-  const [server, setServer] = useState(() => new URLSearchParams(location.search).get('server') ?? '')
+  // In local development with MEALIE_SERVER set, default to the dev proxy.
+  const devProxyUrl = __MEALIE_DEV_PROXY_PATH__ ? `${window.location.origin}${__MEALIE_DEV_PROXY_PATH__}` : ''
+  const [server, setServer] = useState(() => new URLSearchParams(location.search).get('server') ?? devProxyUrl)
   const [method, setMethod] = useState<AuthMethod>('password')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -893,6 +895,11 @@ function SetupPage({ onSignIn, profiles, onBack, onSelectProfile }: {
                   <pre className="help-code">{`Access-Control-Allow-Origin: ${window.location.origin}
 Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS
 Access-Control-Allow-Headers: Authorization, Content-Type`}</pre>
+                  {devProxyUrl ? (
+                    <p><strong>Developing locally?</strong> The dev server is already proxying your Mealie server. Use <code>{devProxyUrl}</code> as the server URL.</p>
+                  ) : (
+                    <p><strong>Developing locally?</strong> Put <code>MEALIE_SERVER=https://your-mealie-server</code> in a <code>.env.local</code> file and restart <code>npm run dev</code>; the setup page will then use the built-in proxy.</p>
+                  )}
                   <p><strong>Running Mealie Connect from source on your computer?</strong> You can use the included local proxy instead:</p>
                   <ol className="proxy-steps">
                     <li>Open a terminal in the Mealie Connect folder and run: <code>node cors-proxy.js</code></li>
