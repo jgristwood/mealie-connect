@@ -1,6 +1,7 @@
 import type { AuthMethod, MealieProfile } from '../../types/mealie'
 import { storage } from '../../lib/storage'
 import { credentialStore } from './credential-store'
+import { MealieClient } from '../mealie/mealie-client'
 
 const PROFILE_KEY = 'mealie-connect-profiles'
 const ACTIVE_PROFILE_KEY = 'mealie-connect-active-profile'
@@ -74,22 +75,63 @@ export const authService = {
       throw new Error('A valid Mealie token could not be established.')
     }
 
-    const profileId = crypto.randomUUID()
+    const mealie = new MealieClient({ baseUrl: server, token })
+
+    if (credentials.method === 'password') {
+      // Session tokens from a password login expire (48h by default). Swap
+      // for a long-lived API token when the server allows it; otherwise keep
+      // the session token and the user can sign in again when it expires.
+      try {
+        const deviceLabel = `Mealie Connect (${new Date().toISOString().slice(0, 10)})`
+        token = await mealie.createApiToken(deviceLabel)
+      } catch {
+        // Older servers or restricted accounts: fall back to the session token.
+      }
+    }
+
+    let username = credentials.username
+    let displayName = credentials.username
+    try {
+      const user = await new MealieClient({ baseUrl: server, token }).getCurrentUser()
+      username = user.username ?? username
+      displayName = user.fullName ?? user.full_name ?? user.username ?? displayName
+    } catch {
+      // Profile details are cosmetic; don't fail sign-in over them.
+    }
+
+    const profiles = await this.listProfiles()
+    // Signing in again to the same account refreshes its token instead of
+    // creating a duplicate profile.
+    const existing = username
+      ? profiles.find((profile) => profile.server === server && profile.username?.toLowerCase() === username.toLowerCase())
+      : undefined
+    const profileId = existing?.id ?? crypto.randomUUID()
     const profile: MealieProfile = {
       id: profileId,
-      name: credentials.username ?? 'Mealie Account',
+      name: username ?? 'Mealie Account',
       server,
       authMethod: credentials.method,
-      username: credentials.username,
-      displayName: credentials.username ?? 'API token user',
+      username,
+      displayName: displayName ?? 'API token user',
     }
 
     await credentialStore.setProfileToken(profileId, token)
-    const profiles = await this.listProfiles()
-    const next = [...profiles, profile]
+    const next = existing
+      ? profiles.map((candidate) => (candidate.id === profileId ? profile : candidate))
+      : [...profiles, profile]
     this.saveProfiles(next)
     this.setActiveProfile(profileId)
     return { ...profile, token }
+  },
+
+  /** Forgets a saved account on this device, including its stored token. */
+  async removeProfile(profileId: string): Promise<void> {
+    const profiles = await this.listProfiles()
+    this.saveProfiles(profiles.filter((profile) => profile.id !== profileId))
+    await credentialStore.removeProfileToken(profileId)
+    if (storage.get<string>(ACTIVE_PROFILE_KEY) === profileId) {
+      storage.remove(ACTIVE_PROFILE_KEY)
+    }
   },
 
   signOut(): void {
@@ -97,7 +139,7 @@ export const authService = {
   },
 }
 
-function createClient({ server, token }: { server: string; token?: string }) {
+function createClient({ server }: { server: string; token?: string }) {
   return {
     async loginWithPassword(username: string, password: string): Promise<string> {
       const form = new URLSearchParams({ username, password })
@@ -108,7 +150,10 @@ function createClient({ server, token }: { server: string; token?: string }) {
       })
 
       if (!response.ok) {
-        throw new Error('Your Mealie login is no longer valid. Please sign in again.')
+        if (response.status === 401 || response.status === 403) {
+          throw new Error('Mealie did not accept that username and password.')
+        }
+        throw new Error(`Mealie sign-in failed (server returned ${response.status}).`)
       }
 
       const payload = (await response.json()) as { access_token?: string; token?: string }
@@ -118,21 +163,6 @@ function createClient({ server, token }: { server: string; token?: string }) {
       }
 
       return nextToken
-    },
-    async getCurrentUser(): Promise<{ username?: string }> {
-      const response = await fetch(`${server}/api/users/self`, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-        },
-      })
-
-      if (!response.ok) {
-        throw new Error('Unable to load the current Mealie user profile.')
-      }
-
-      return (await response.json()) as { username?: string }
     },
   }
 }

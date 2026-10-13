@@ -8,6 +8,7 @@ import {
   BookOpen,
   Calendar,
   ChevronLeft,
+  ChevronRight,
   Dice5,
   Download,
   Home,
@@ -19,7 +20,7 @@ import {
   X,
 } from 'lucide-react'
 import { authService } from './services/auth/auth-service'
-import { MealieClient, groupMealPlanEntriesIntoSlots, type MealPlanSlot } from './services/mealie/mealie-client'
+import { MealieClient, formatMealieTime, groupMealPlanEntriesIntoSlots, type MealPlanSlot } from './services/mealie/mealie-client'
 import { THEMES, getStoredTheme, setTheme as persistTheme } from './lib/theme'
 import { isAndroidPlatform, isExternalHttpUrl, isNativePlatform, openExternalUrl, removeNativeListener } from './lib/native'
 import defaultRecipeImage from './assets/default-image.jpg'
@@ -31,6 +32,7 @@ import type {
   MealieRecipeDetail,
   MealieRecipeSummary,
   MealieShoppingList,
+  MealieShoppingListItem,
   MealieTag,
   MealieWeekPlan,
   PlannableMealType,
@@ -39,8 +41,9 @@ import type {
 import { PLANNABLE_MEAL_TYPES } from './types/mealie'
 import './App.css'
 
-const APP_VERSION = '0.7.5'
+const APP_VERSION = __APP_VERSION__
 const RECIPES_PAGE_SIZE = 50
+const HOME_RECIPE_COUNT = 7
 const MEAL_TYPE_LABELS: Record<string, string> = {
   breakfast: 'Breakfast',
   lunch: 'Lunch',
@@ -71,6 +74,28 @@ function NativeConnectionStatus({ state }: { state: ConnectivityState | null }) 
     'auth-failed': { label: 'Authentication required', className: 'native-connection-status warning' },
   }
   return <div className={config[state].className}>{config[state].label}</div>
+}
+
+function isAuthErrorMessage(message: string): boolean {
+  const lower = message.toLowerCase()
+  return lower.includes('sign in again') || lower.includes('authentication failed')
+}
+
+/** Error banner that offers a "Sign in again" link when the error is an
+ * expired or rejected login. */
+function ErrorMessage({ message, activeProfile }: { message: string; activeProfile?: MealieProfile | null }) {
+  if (!message) return null
+  return (
+    <p className="error-message">
+      {message}
+      {isAuthErrorMessage(message) ? (
+        <>
+          {' '}
+          <Link to={activeProfile ? `/setup?server=${encodeURIComponent(activeProfile.server)}` : '/setup'}>Sign in again</Link>
+        </>
+      ) : null}
+    </p>
+  )
 }
 
 function ExternalLink({ href, children, className }: { href: string; children: ReactNode; className?: string }) {
@@ -224,6 +249,9 @@ function App() {
   const [error, setError] = useState('')
   const [networkConnected, setNetworkConnected] = useState(true)
   const [connectivityState, setConnectivityState] = useState<ConnectivityState | null>(null)
+  const [homeRecipes, setHomeRecipes] = useState<MealieRecipeSummary[]>([])
+  const [homeLoading, setHomeLoading] = useState(false)
+  const [homeError, setHomeError] = useState('')
 
   const loadProfiles = useCallback(async () => {
     const [nextProfiles, nextActiveProfile] = await Promise.all([
@@ -337,6 +365,21 @@ function App() {
     return () => window.clearTimeout(timeout)
   }, [activeProfile, searchTerm, selectedCategories, selectedTags])
 
+  // The home page shows the newest recipes, independent of whatever search or
+  // filters are active on the Recipes page.
+  useEffect(() => {
+    if (!activeProfile) { setHomeRecipes([]); setHomeError(''); return }
+    let cancelled = false
+    const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
+    setHomeLoading(true)
+    setHomeError('')
+    client.getRecipes({ page: 1, perPage: HOME_RECIPE_COUNT, orderBy: 'created_at', orderDirection: 'desc' })
+      .then((nextRecipes) => { if (!cancelled) setHomeRecipes(nextRecipes) })
+      .catch((err: unknown) => { if (!cancelled) setHomeError(err instanceof Error ? err.message : 'Unable to load recipes.') })
+      .finally(() => { if (!cancelled) setHomeLoading(false) })
+    return () => { cancelled = true }
+  }, [activeProfile])
+
   const loadMoreRecipes = useCallback(async () => {
     if (!activeProfile || loading || loadingMoreRecipes || !hasMoreRecipes) return
     setLoadingMoreRecipes(true)
@@ -376,12 +419,18 @@ function App() {
     setActiveProfile(profile)
   }
 
+  const removeProfile = async (profile: MealieProfile) => {
+    await authService.removeProfile(profile.id)
+    if (activeProfile?.id === profile.id) setActiveProfile(null)
+    await loadProfiles()
+  }
+
   return (
     <BrowserRouter>
       <ScrollToTop />
       <Routes>
-        <Route path="/" element={<HomePage activeProfile={activeProfile} recipes={recipes} loading={loading} error={error} />} />
-        <Route path="/settings" element={<SettingsPage activeProfile={activeProfile} profiles={profiles} onSelectProfile={selectProfile} onSignOut={signOut} />} />
+        <Route path="/" element={<HomePage activeProfile={activeProfile} recipes={homeRecipes} loading={homeLoading} error={homeError} />} />
+        <Route path="/settings" element={<SettingsPage activeProfile={activeProfile} profiles={profiles} onSelectProfile={selectProfile} onRemoveProfile={removeProfile} onSignOut={signOut} connectivityState={connectivityState} />} />
         <Route path="/setup" element={<SetupPage onSignIn={signIn} profiles={profiles} onBack={() => window.history.back()} onSelectProfile={selectProfile} />} />
         <Route path="/import" element={<ImportRecipePage activeProfile={activeProfile} />} />
         <Route path="/recipes" element={
@@ -460,14 +509,14 @@ function HomePage({ activeProfile, recipes, loading, error }: {
           <>
             {featured && !loading ? (
               <div className="hero">
-                <RecipeThumbnail activeProfile={activeProfile} recipe={featured} className="hero-image" />
+                <RecipeThumbnail activeProfile={activeProfile} recipe={featured} className="hero-image" size="original" />
                 <div className="hero-gradient" aria-hidden="true" />
                 <div className="hero-content">
                   <p className="eyebrow hero-eyebrow">{featured.categories?.[0]?.name ?? 'Featured recipe'}</p>
                   <h1 className="hero-title">{featured.name}</h1>
                   {featured.description ? <p className="hero-description">{featured.description}</p> : null}
                   <div className="hero-meta">
-                    {featured.totalTime ? <span className="hero-meta-item">{featured.totalTime} min</span> : null}
+                    {featured.totalTime ? <span className="hero-meta-item">{formatMealieTime(featured.totalTime)}</span> : null}
                     {featured.servings ? <span className="hero-meta-item">{featured.servings} servings</span> : null}
                   </div>
                   <div className="hero-actions">
@@ -496,14 +545,14 @@ function HomePage({ activeProfile, recipes, loading, error }: {
               </div>
             )}
 
-            {error ? <p className="error-message" style={{marginTop: 'var(--sp-4)'}}>{error}</p> : null}
+            {error ? <div style={{marginTop: 'var(--sp-4)'}}><ErrorMessage message={error} activeProfile={activeProfile} /></div> : null}
 
             {recent.length > 0 ? (
               <section className="home-section">
                 <div className="section-header">
                   <div>
                     <p className="eyebrow">From your library</p>
-                    <h2 className="section-title">Recent recipes</h2>
+                    <h2 className="section-title">Recently added</h2>
                   </div>
                   <Link className="btn-ghost btn-sm" to="/recipes">View all</Link>
                 </div>
@@ -516,7 +565,7 @@ function HomePage({ activeProfile, recipes, loading, error }: {
                       <div className="recipe-card-body">
                         <p className="recipe-card-kicker">{recipe.categories?.[0]?.name ?? 'Recipe'}</p>
                         <h3 className="recipe-card-title">{recipe.name}</h3>
-                        {recipe.totalTime ? <p className="recipe-card-meta">{recipe.totalTime} min</p> : null}
+                        {recipe.totalTime ? <p className="recipe-card-meta">{formatMealieTime(recipe.totalTime)}</p> : null}
                       </div>
                     </Link>
                   ))}
@@ -548,7 +597,7 @@ function HomePage({ activeProfile, recipes, loading, error }: {
                   <div className="home-tool-card-icon"><Dice5 /></div>
                   <div className="home-tool-card-label">Discover</div>
                   <div className="home-tool-card-title">Dinner Roulette</div>
-                  <div className="home-tool-card-desc">Let chance pick tonight recipe.</div>
+                  <div className="home-tool-card-desc">Let chance pick tonight's recipe.</div>
                 </Link>
               </div>
             </section>
@@ -570,12 +619,19 @@ function HomePage({ activeProfile, recipes, loading, error }: {
   )
 }
 
-function SettingsPage({ activeProfile, profiles, onSelectProfile, onSignOut }: {
+function SettingsPage({ activeProfile, profiles, onSelectProfile, onRemoveProfile, onSignOut, connectivityState }: {
   activeProfile: MealieProfile | null
   profiles: MealieProfile[]
   onSelectProfile: (profile: MealieProfile) => void
+  onRemoveProfile: (profile: MealieProfile) => Promise<void>
   onSignOut: () => void
+  connectivityState: ConnectivityState | null
 }) {
+  const profileLabel = (profile: MealieProfile) => profile.displayName ?? profile.username ?? profile.name
+  const confirmRemove = (profile: MealieProfile) => {
+    if (!window.confirm(`Remove ${profileLabel(profile)} (${profile.server}) from this device? You can add it again later.`)) return
+    void onRemoveProfile(profile)
+  }
   return (
     <div className="app-page">
       <AppHeader activeProfile={activeProfile} />
@@ -605,17 +661,24 @@ function SettingsPage({ activeProfile, profiles, onSelectProfile, onSignOut }: {
                   <p className="settings-profile-server">{activeProfile.server}</p>
                 </div>
               </div>
+              {connectivityState === 'auth-failed' ? (
+                <ErrorMessage message="Mealie no longer accepts this login. Please sign in again." activeProfile={activeProfile} />
+              ) : null}
               {profiles.length > 1 ? (
                 <div className="profile-list">
                   {profiles.map((profile) => (
-                    <button
-                      key={profile.id}
-                      type="button"
-                      className={activeProfile.id === profile.id ? 'profile-list-item active' : 'profile-list-item'}
-                      onClick={() => onSelectProfile(profile)}
-                    >
-                      {profile.displayName ?? profile.username ?? profile.name}
-                    </button>
+                    <div key={profile.id} className="profile-list-row">
+                      <button
+                        type="button"
+                        className={activeProfile.id === profile.id ? 'profile-list-item active' : 'profile-list-item'}
+                        onClick={() => onSelectProfile(profile)}
+                      >
+                        {profileLabel(profile)}
+                      </button>
+                      <button type="button" className="btn-ghost btn-sm" style={{color:'var(--danger)'}} onClick={() => confirmRemove(profile)} aria-label={`Remove ${profileLabel(profile)} from this device`}>
+                        <X />
+                      </button>
+                    </div>
                   ))}
                 </div>
               ) : null}
@@ -628,7 +691,10 @@ function SettingsPage({ activeProfile, profiles, onSelectProfile, onSignOut }: {
             </section>
 
             <section className="settings-section">
-              <button type="button" className="btn-danger" onClick={onSignOut}>Sign out</button>
+              <div className="settings-signout-actions">
+                <button type="button" className="btn-danger" onClick={onSignOut}>Sign out</button>
+                <button type="button" className="btn-ghost btn-sm" style={{color:'var(--danger)'}} onClick={() => confirmRemove(activeProfile)}>Remove this account from device</button>
+              </div>
             </section>
           </>
         )}
@@ -645,7 +711,8 @@ function SetupPage({ onSignIn, profiles, onBack, onSelectProfile }: {
   onSelectProfile: (profile: MealieProfile) => void
 }) {
   const navigate = useNavigate()
-  const [server, setServer] = useState('https://mealie.example.com')
+  const location = useLocation()
+  const [server, setServer] = useState(() => new URLSearchParams(location.search).get('server') ?? '')
   const [method, setMethod] = useState<AuthMethod>('password')
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -706,7 +773,7 @@ function SetupPage({ onSignIn, profiles, onBack, onSelectProfile }: {
           <form onSubmit={handleSubmit} className="form-stack">
             <div className="form-field">
               <label className="form-label" htmlFor="setup-server">Server URL</label>
-              <input id="setup-server" className="form-input" type="url" value={server} onChange={(event) => setServer(event.target.value)} placeholder="https://mealie.example.com" />
+              <input id="setup-server" className="form-input" type="url" inputMode="url" autoCapitalize="off" autoCorrect="off" value={server} onChange={(event) => setServer(event.target.value)} placeholder="https://mealie.example.com" />
             </div>
 
             <div className="auth-method-selector" role="radiogroup" aria-label="Authentication method">
@@ -724,11 +791,11 @@ function SetupPage({ onSignIn, profiles, onBack, onSelectProfile }: {
               <>
                 <div className="form-field">
                   <label className="form-label" htmlFor="setup-username">Username</label>
-                  <input id="setup-username" className="form-input" value={username} onChange={(event) => setUsername(event.target.value)} />
+                  <input id="setup-username" className="form-input" autoComplete="username" autoCapitalize="off" autoCorrect="off" value={username} onChange={(event) => setUsername(event.target.value)} />
                 </div>
                 <div className="form-field">
                   <label className="form-label" htmlFor="setup-password">Password</label>
-                  <input id="setup-password" className="form-input" type="password" value={password} onChange={(event) => setPassword(event.target.value)} />
+                  <input id="setup-password" className="form-input" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} />
                 </div>
               </>
             ) : (
@@ -742,10 +809,15 @@ function SetupPage({ onSignIn, profiles, onBack, onSelectProfile }: {
 
             {corsErrorDetected && (
               <section className="cors-solution-panel">
-                <h3>CORS error: use the local proxy</h3>
+                <h3>CORS error: your browser blocked the connection</h3>
                 <div className="help-text">
-                  <p><strong>What is happening?</strong> Your browser is blocking the connection because your Mealie server does not have CORS enabled.</p>
-                  <p><strong>Quick Fix:</strong> Use the included CORS proxy</p>
+                  <p><strong>What is happening?</strong> Your browser is blocking the connection because your Mealie server does not allow requests from this website ({window.location.origin}).</p>
+                  <p><strong>Easiest fix:</strong> use the Android app. It connects directly, so CORS does not apply.</p>
+                  <p><strong>Using the web app?</strong> Configure the reverse proxy in front of Mealie (nginx, Caddy, Traefik, etc.) to send these headers, and to answer <code>OPTIONS</code> requests with them:</p>
+                  <pre className="help-code">{`Access-Control-Allow-Origin: ${window.location.origin}
+Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS
+Access-Control-Allow-Headers: Authorization, Content-Type`}</pre>
+                  <p><strong>Running Mealie Connect from source on your computer?</strong> You can use the included local proxy instead:</p>
                   <ol className="proxy-steps">
                     <li>Open a terminal in the Mealie Connect folder and run: <code>node cors-proxy.js</code></li>
                     <li>You should see Proxy is listening on http://localhost:3001</li>
@@ -753,7 +825,7 @@ function SetupPage({ onSignIn, profiles, onBack, onSelectProfile }: {
                     <li>Click Continue</li>
                   </ol>
                   <p className="small-text">The proxy runs locally on your computer and forwards requests to your actual Mealie server while adding the necessary CORS headers.</p>
-                  <p className="small-text">In the Android app, Mealie requests use Capacitor native HTTP bridge, so browser CORS rules do not apply there. This proxy is only for the web app running in a browser.</p>
+                  <p className="small-text">Web browsers also block an https web app from talking to a plain http:// server. If your server is http-only, use the Android app or serve Mealie over https.</p>
                 </div>
               </section>
             )}
@@ -864,15 +936,36 @@ function ImportRecipePage({ activeProfile }: { activeProfile: MealieProfile | nu
   )
 }
 
-function RecipeThumbnail({ activeProfile, recipe, className = 'recipe-thumbnail' }: {
+function RecipeThumbnail({ activeProfile, recipe, className = 'recipe-thumbnail', size = 'min-original' }: {
   activeProfile: MealieProfile
   recipe: MealieRecipeSummary
   className?: string
+  size?: 'original' | 'min-original'
 }) {
   const [imageUrl, setImageUrl] = useState('')
+  const [visible, setVisible] = useState(false)
+  const imageRef = useRef<HTMLImageElement>(null)
+  const { id: recipeId, image: recipeImage } = recipe
+
+  // Only download the image once it is near the viewport.
   useEffect(() => {
+    const element = imageRef.current
+    if (!element || visible) return
+    if (typeof IntersectionObserver === 'undefined') { setVisible(true); return }
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setVisible(true)
+        observer.disconnect()
+      }
+    }, { rootMargin: '300px' })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [visible])
+
+  useEffect(() => {
+    if (!visible) return
     const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
-    const sourceUrl = client.resolveRecipeImage(recipe)
+    const sourceUrl = client.resolveRecipeImage({ id: recipeId, image: recipeImage }, size)
     if (!sourceUrl) return
     let disposed = false
     client.loadRecipeImage(sourceUrl).then((nextImageUrl) => {
@@ -886,8 +979,8 @@ function RecipeThumbnail({ activeProfile, recipe, className = 'recipe-thumbnail'
         return ''
       })
     }
-  }, [activeProfile, recipe])
-  return <img className={className} src={imageUrl || defaultRecipeImage} alt="" />
+  }, [activeProfile, recipeId, recipeImage, size, visible])
+  return <img ref={imageRef} className={className} src={imageUrl || defaultRecipeImage} alt="" />
 }
 
 function RecipesPage({ activeProfile, recipes, categories, tags, searchTerm, setSearchTerm, selectedCategories, setSelectedCategories, selectedTags, setSelectedTags, loading, loadingMore, hasMore, onLoadMore, error }: {
@@ -1001,7 +1094,7 @@ function RecipesPage({ activeProfile, recipes, categories, tags, searchTerm, set
             </div>
 
             {loading ? <p style={{padding: 'var(--sp-4) 0', color: 'var(--text-muted)'}}>Loading recipes...</p> : null}
-            {error ? <p className="error-message">{error}</p> : null}
+            <ErrorMessage message={error} activeProfile={activeProfile} />
 
             <div className="recipe-grid">
               {recipes.map((recipe) => (
@@ -1094,9 +1187,9 @@ function RecipeDetailPage({ activeProfile }: { activeProfile: MealieProfile | nu
                 <h1 className="detail-title">{recipe.name}</h1>
                 {recipe.description ? <p className="detail-description">{recipe.description}</p> : null}
                 <div className="detail-meta-row">
-                  {recipe.totalTime ? <span className="detail-meta-item">{recipe.totalTime} min total</span> : null}
-                  {recipe.prepTime ? <span className="detail-meta-item">{recipe.prepTime} prep</span> : null}
-                  {recipe.cookTime ? <span className="detail-meta-item">{recipe.cookTime} cook</span> : null}
+                  {recipe.totalTime ? <span className="detail-meta-item">{formatMealieTime(recipe.totalTime)} total</span> : null}
+                  {recipe.prepTime ? <span className="detail-meta-item">{formatMealieTime(recipe.prepTime)} prep</span> : null}
+                  {recipe.cookTime ? <span className="detail-meta-item">{formatMealieTime(recipe.cookTime)} cook</span> : null}
                   {recipe.servings ? <span className="detail-meta-item">{recipe.servings} servings</span> : null}
                 </div>
                 {recipe.url ? <ExternalLink className="btn-ghost btn-sm" href={recipe.url}>Open original source</ExternalLink> : null}
@@ -1248,6 +1341,8 @@ function ShoppingListsPage({ activeProfile }: { activeProfile: MealieProfile | n
 
   const deleteList = async (id: string) => {
     if (!activeProfile) return
+    const listName = lists.find((list) => list.id === id)?.name ?? 'this list'
+    if (!window.confirm(`Delete "${listName}" and all of its items? This cannot be undone.`)) return
     const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
     try {
       await client.deleteShoppingList(id)
@@ -1349,13 +1444,20 @@ function ShoppingListDetailPage({ activeProfile }: { activeProfile: MealieProfil
     }
   }
 
-  const toggleItem = async (itemId: string | undefined, checked: boolean) => {
-    if (!activeProfile || !list || !itemId) return
+  const toggleItem = async (item: MealieShoppingListItem) => {
+    if (!activeProfile || !list || !item.id) return
+    const nextChecked = !(item.checked ?? false)
+    const setChecked = (checked: boolean) => setList((current) => current
+      ? { ...current, items: current.items?.map((candidate) => (candidate.id === item.id ? { ...candidate, checked } : candidate)) }
+      : current)
+    // Update the checkbox immediately; roll back if Mealie rejects the change.
+    setChecked(nextChecked)
+    setError('')
     const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
     try {
-      const updated = await client.updateShoppingListItem(list.id, itemId, { checked: !checked })
-      setList(updated)
+      await client.updateShoppingListItem(list.id, item, { checked: nextChecked })
     } catch (err) {
+      setChecked(!nextChecked)
       setError(err instanceof Error ? err.message : 'Failed to update item.')
     }
   }
@@ -1375,6 +1477,7 @@ function ShoppingListDetailPage({ activeProfile }: { activeProfile: MealieProfil
     if (!activeProfile || !list) return
     const itemIds = (list.items ?? []).map((item) => item.id).filter((itemId): itemId is string => Boolean(itemId))
     if (itemIds.length === 0) return
+    if (!window.confirm(`Remove all ${itemIds.length} items from "${list.name}"?`)) return
     const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
     setError('')
     try {
@@ -1438,7 +1541,7 @@ function ShoppingListDetailPage({ activeProfile }: { activeProfile: MealieProfil
               {(list.items ?? []).length > 0 ? (
                 (list.items ?? []).map((item, index) => (
                   <li key={`${item.id ?? "item"}-${index}`} className={item.checked ? "shopping-item checked" : "shopping-item"}>
-                    <input className="shopping-item-checkbox" type="checkbox" checked={item.checked ?? false} onChange={() => toggleItem(item.id, item.checked ?? false)} aria-label={`Mark ${item.display ?? "item"} as done`} />
+                    <input className="shopping-item-checkbox" type="checkbox" checked={item.checked ?? false} onChange={() => void toggleItem(item)} aria-label={`Mark ${item.display ?? "item"} as done`} />
                     <span className="shopping-item-text">{item.display ?? `${item.quantity ?? ""} ${item.note ?? ""}`.trim()}</span>
                     <button type="button" className="shopping-item-remove btn-ghost btn-sm" onClick={() => removeItem(item.id)} aria-label="Remove item">
                       <X />
@@ -1458,8 +1561,13 @@ function ShoppingListDetailPage({ activeProfile }: { activeProfile: MealieProfil
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
+/** Formats a date as YYYY-MM-DD in the user's local time zone. (Using
+ * toISOString would convert to UTC and can shift the date by a day.) */
 function toDateKey(date: Date): string {
-  return date.toISOString().split('T')[0] as string
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 function parseDateKey(key: string): Date {
@@ -1546,12 +1654,14 @@ function MealPlanPage({ activeProfile }: { activeProfile: MealieProfile | null }
     const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
     setError('')
     try {
+      // Create the new entry before deleting the old one so a failure never
+      // leaves the slot empty.
+      const created = await client.createMealPlanEntry({ date, entryType: mealType, title: recipe.name, recipeId: recipe.id })
+      setEntries((current) => [...current, created])
       if (replaceEntryId) {
         await client.deleteMealPlanEntry(replaceEntryId)
         setEntries((current) => current.filter((entry) => entry.id !== replaceEntryId))
       }
-      const created = await client.createMealPlanEntry({ date, entryType: mealType, title: recipe.name, recipeId: recipe.id })
-      setEntries((current) => [...current, created])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add that recipe to the meal plan.')
     } finally {
@@ -1598,9 +1708,9 @@ function MealPlanPage({ activeProfile }: { activeProfile: MealieProfile | null }
                 ))}
               </div>
               <div className="date-nav">
-                <button type="button" className="btn-ghost btn-sm" onClick={goPrevious} aria-label="Previous">prev</button>
+                <button type="button" className="btn-ghost btn-sm" onClick={goPrevious} aria-label={`Previous ${view}`}><ChevronLeft /></button>
                 <button type="button" className="btn-ghost btn-sm" onClick={goToday}>Today</button>
-                <button type="button" className="btn-ghost btn-sm" onClick={goNext} aria-label="Next">next</button>
+                <button type="button" className="btn-ghost btn-sm" onClick={goNext} aria-label={`Next ${view}`}><ChevronRight /></button>
               </div>
             </div>
 
@@ -1843,6 +1953,28 @@ interface RouletteResultRecipe extends MealieRecipeSummary {
   __detail?: MealieRecipeDetail
 }
 
+const ROULETTE_DETAIL_CONCURRENCY = 6
+
+/** Like Promise.allSettled over items.map(task), but runs at most `limit`
+ * tasks at once so large libraries don't flood the Mealie server. */
+async function settleWithConcurrency<T, R>(items: T[], limit: number, task: (item: T) => Promise<R>): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length)
+  let next = 0
+  const worker = async () => {
+    while (next < items.length) {
+      const index = next
+      next += 1
+      try {
+        results[index] = { status: 'fulfilled', value: await task(items[index] as T) }
+      } catch (reason) {
+        results[index] = { status: 'rejected', reason }
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
+  return results
+}
+
 function matchesIngredients(detail: MealieRecipeDetail, ingredients: string[], mode: 'any' | 'all'): boolean {
   if (ingredients.length === 0) return true
   const recipeIngredientText = (detail.ingredients ?? []).map((ingredient) => `${ingredient.food ?? ""} ${ingredient.note ?? ""}`.toLowerCase()).join(" | ")
@@ -1905,7 +2037,7 @@ function DinnerRoulettePage({ activeProfile }: { activeProfile: MealieProfile | 
       const candidates = await client.getAllRecipes({ categories: categoryId ? [categoryId] : undefined, tags: tagIds.length > 0 ? tagIds : undefined, maxPrepTime, maxCookTime })
       let pool: RouletteResultRecipe[] = candidates
       if (ingredients.length > 0) {
-        const details = await Promise.allSettled(candidates.map((recipe) => client.getRecipe(recipe.slug || recipe.id)))
+        const details = await settleWithConcurrency(candidates, ROULETTE_DETAIL_CONCURRENCY, (recipe) => client.getRecipe(recipe.slug || recipe.id))
         pool = candidates.filter((_recipe, index) => {
           const detailResult = details[index]
           if (detailResult.status !== 'fulfilled') return false
@@ -1945,7 +2077,7 @@ function DinnerRoulettePage({ activeProfile }: { activeProfile: MealieProfile | 
             <div className="page-intro">
               <p className="eyebrow">A Mealie Connect original</p>
               <h1 className="page-intro-title">Dinner Roulette</h1>
-              <p className="page-intro-text">Do not know what to cook? Roll completely at random, or narrow it down below.</p>
+              <p className="page-intro-text">Don't know what to cook? Roll completely at random, or narrow it down below.</p>
             </div>
 
             <section className="roulette-filters">
@@ -2044,16 +2176,16 @@ function DinnerRoulettePage({ activeProfile }: { activeProfile: MealieProfile | 
 
             {result ? (
               <div className="roulette-result">
-                {activeProfile ? <RecipeThumbnail activeProfile={activeProfile} recipe={result} className="roulette-result-image" /> : null}
+                {activeProfile ? <RecipeThumbnail activeProfile={activeProfile} recipe={result} className="roulette-result-image" size="original" /> : null}
                 <div className="roulette-result-body">
-                  <p className="eyebrow">Tonight s recipe</p>
+                  <p className="eyebrow">Tonight's recipe</p>
                   <h2>{result.name}</h2>
                   {result.description ? <p>{result.description}</p> : null}
                   <div className="chip-list" style={{marginTop:'var(--sp-3)'}}>
                     {(result.categories ?? []).map((category) => <span key={category.id} className="chip">{category.name}</span>)}
                     {(result.tags ?? []).map((tag) => <span key={tag.id} className="chip">{tag.name}</span>)}
-                    {result.prepTime ? <span className="chip">Prep: {result.prepTime} min</span> : null}
-                    {result.cookTime ? <span className="chip">Cook: {result.cookTime} min</span> : null}
+                    {result.prepTime ? <span className="chip">Prep: {formatMealieTime(result.prepTime)}</span> : null}
+                    {result.cookTime ? <span className="chip">Cook: {formatMealieTime(result.cookTime)}</span> : null}
                   </div>
                   <div className="roulette-result-actions">
               <Link className="btn-primary" to={`/cook/${result.slug || result.id}`}>Cook Now</Link>
@@ -2085,7 +2217,7 @@ function AddToMealPlanModal({ activeProfile, recipe, onClose }: {
   onClose: () => void
 }) {
   useModalEscapeToClose(onClose)
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0] as string)
+  const [date, setDate] = useState(() => toDateKey(new Date()))
   const [mealType, setMealType] = useState<PlannableMealType>('dinner')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')

@@ -3,6 +3,7 @@ import type {
   MealieRecipeDetail,
   MealieRecipeSummary,
   MealieShoppingList,
+  MealieShoppingListItem,
   MealieWeekPlan,
   MealieTag,
   PlannableMealType,
@@ -24,7 +25,12 @@ export interface RecipeQueryFilters {
   maxCookTime?: number
   page?: number
   perPage?: number
+  /** Mealie column to sort by, e.g. "created_at" or "name". */
+  orderBy?: string
+  orderDirection?: 'asc' | 'desc'
 }
+
+export type RecipeImageSize = 'original' | 'min-original' | 'tiny-original'
 
 type MealieShoppingListResponse = MealieShoppingList & { listItems?: MealieShoppingList['items'] }
 
@@ -44,6 +50,21 @@ export function parseMealieTimeToMinutes(value: number | string | undefined): nu
 
   const numeric = Number.parseInt(value, 10)
   return Number.isNaN(numeric) ? undefined : numeric
+}
+
+/** Formats a Mealie time value for display. Numeric and ISO 8601 values are
+ * rendered as "1 h 30 min"; free-form strings (e.g. "1 hour 30 minutes") are
+ * returned as Mealie stored them. */
+export function formatMealieTime(value: number | string | undefined): string | undefined {
+  if (value === undefined || value === null || value === '') return undefined
+  const isNumeric = typeof value === 'number' || /^\d+$/.test(value.trim()) || /^P(?:\d+D)?T?(?:\d+H)?(?:\d+M)?$/i.test(value.trim())
+  if (!isNumeric) return String(value).trim()
+  const minutes = parseMealieTimeToMinutes(value)
+  if (minutes === undefined) return String(value).trim()
+  const hours = Math.floor(minutes / 60)
+  const remainder = minutes % 60
+  if (hours === 0) return `${remainder} min`
+  return remainder === 0 ? `${hours} h` : `${hours} h ${remainder} min`
 }
 
 export class MealieClient {
@@ -180,7 +201,28 @@ export class MealieClient {
     return nextToken
   }
 
-  async getCurrentUser(): Promise<{ username?: string; first_name?: string; last_name?: string }> {
+  /** Creates a long-lived Mealie API token for the signed-in user. Password
+   * logins return short-lived session tokens (48h by default), so the app
+   * swaps them for an API token to avoid silent logouts. */
+  async createApiToken(name: string): Promise<string> {
+    const response = await fetch(`${this.baseUrl}/api/users/api-tokens`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({ name }),
+    })
+
+    if (!response.ok) {
+      throw new Error('Unable to create a Mealie API token.')
+    }
+
+    const payload = await this.safeJsonParse<{ token?: string }>(response, 'Failed to parse API token response')
+    if (!payload.token) {
+      throw new Error('The Mealie API token response did not include a token.')
+    }
+    return payload.token
+  }
+
+  async getCurrentUser(): Promise<{ username?: string; fullName?: string; full_name?: string; first_name?: string; last_name?: string }> {
     const response = await fetch(`${this.baseUrl}/api/users/self`, {
       method: 'GET',
       headers: this.headers(),
@@ -193,7 +235,7 @@ export class MealieClient {
       throw new Error('Unable to load the current Mealie user profile.')
     }
 
-    return await this.safeJsonParse<{ username?: string; first_name?: string; last_name?: string }>(response, 'Failed to parse user profile')
+    return await this.safeJsonParse<{ username?: string; fullName?: string; full_name?: string; first_name?: string; last_name?: string }>(response, 'Failed to parse user profile')
   }
 
   async getHealth(): Promise<{ ok: boolean; message: string }> {
@@ -233,7 +275,7 @@ export class MealieClient {
       if (isCorsError) {
         return {
           ok: false,
-          message: `CORS Error: Your browser blocked the connection to the Mealie server. This is a security restriction. You have two options: 1) Use the included CORS proxy (recommended for self-hosted servers) - run 'node cors-proxy.js' in the app directory and connect to http://localhost:3001 instead. 2) Configure CORS headers on your Mealie server.`,
+          message: 'Your browser could not connect to the Mealie server. Check the URL is correct and the server is online. If it is, the server is most likely blocking this website (a CORS setting). See the options below.',
           isCorsError: true,
         }
       }
@@ -261,6 +303,8 @@ export class MealieClient {
       tags: filters.tags,
       page: filters.page ?? 1,
       perPage: filters.perPage ?? 50,
+      orderBy: filters.orderBy,
+      orderDirection: filters.orderDirection,
     })
 
     const response = await fetch(`${this.baseUrl}/api/recipes${query}`, {
@@ -269,6 +313,9 @@ export class MealieClient {
     })
 
     if (!response.ok) {
+      if (response.status === 401) {
+        throw new Error('Mealie authentication failed. Please sign in again.')
+      }
       throw new Error('Failed to load recipes from Mealie.')
     }
 
@@ -357,12 +404,16 @@ export class MealieClient {
     return URL.createObjectURL(await response.blob())
   }
 
-  resolveRecipeImage(recipe: Pick<MealieRecipeSummary, 'id' | 'image'>): string | undefined {
+  /** Resolves a recipe's image URL. Use 'min-original' for cards and
+   * thumbnails; it is a fraction of the size of the full original. */
+  resolveRecipeImage(recipe: Pick<MealieRecipeSummary, 'id' | 'image'>, size: RecipeImageSize = 'original'): string | undefined {
     const rawImage = recipe.image as unknown
-    if (typeof rawImage === 'string' && rawImage.startsWith('http')) return rawImage
+    if (typeof rawImage === 'string' && rawImage.startsWith('http')) {
+      return size === 'original' ? rawImage : rawImage.replace(/\/original\.webp(\?.*)?$/, `/${size}.webp$1`)
+    }
     if (!rawImage) return undefined
 
-    return `${this.baseUrl}/api/media/recipes/${encodeURIComponent(recipe.id)}/images/original.webp`
+    return `${this.baseUrl}/api/media/recipes/${encodeURIComponent(recipe.id)}/images/${size}.webp`
   }
 
   async importRecipeFromUrl(url: string): Promise<MealieRecipeDetail> {
@@ -447,10 +498,6 @@ export class MealieClient {
 
     if (status === 422) {
       return 'Mealie rejected the recipe import. Please enter a valid recipe URL.'
-    }
-
-    if (status === 403 && validationMessage) {
-      return `Mealie rejected the recipe import: ${validationMessage}`
     }
 
     if (status >= 500 && validationMessage) {
@@ -642,13 +689,19 @@ export class MealieClient {
     return await this.getShoppingList(listId)
   }
 
-  async updateShoppingListItem(listId: string, itemId: string, updates: { checked?: boolean; quantity?: number | string; unit?: string }): Promise<MealieShoppingList> {
+  /** Updates a shopping list item. Mealie's PUT replaces the whole item, so
+   * the full existing item is sent with the updates merged on top; sending
+   * only the changed fields would reset quantity, note, food, etc. */
+  async updateShoppingListItem(listId: string, item: MealieShoppingListItem, updates: { checked?: boolean; quantity?: number | string; note?: string }): Promise<MealieShoppingList> {
+    if (!item.id) {
+      throw new Error('That shopping list item cannot be updated.')
+    }
     const response = await fetch(
-      `${this.baseUrl}/api/households/shopping/items/${encodeURIComponent(itemId)}`,
+      `${this.baseUrl}/api/households/shopping/items/${encodeURIComponent(item.id)}`,
       {
         method: 'PUT',
         headers: this.headers(),
-        body: JSON.stringify({ ...updates, shoppingListId: listId }),
+        body: JSON.stringify({ ...item, ...updates, shoppingListId: listId }),
       },
     )
 

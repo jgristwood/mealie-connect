@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { MealieClient, groupMealPlanEntriesIntoSlots, parseMealieTimeToMinutes } from './mealie-client'
+import { MealieClient, formatMealieTime, groupMealPlanEntriesIntoSlots, parseMealieTimeToMinutes } from './mealie-client'
 
 const jsonResponse = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
@@ -275,5 +275,63 @@ describe('groupMealPlanEntriesIntoSlots', () => {
     const withoutGarlicBread = entries.filter((entry) => entry.id !== '2')
     const slots = groupMealPlanEntriesIntoSlots(withoutGarlicBread as never)
     expect(slots[0]?.entries.map((entry) => entry.recipe?.name)).toEqual(['Chicken Parmesan', 'Caesar Salad'])
+  })
+})
+
+describe('formatMealieTime', () => {
+  it('formats numeric and ISO 8601 values as hours and minutes', () => {
+    expect(formatMealieTime(45)).toBe('45 min')
+    expect(formatMealieTime('90')).toBe('1 h 30 min')
+    expect(formatMealieTime('PT2H')).toBe('2 h')
+  })
+
+  it('leaves free-form Mealie strings as written', () => {
+    expect(formatMealieTime('1 hour 30 minutes')).toBe('1 hour 30 minutes')
+    expect(formatMealieTime(undefined)).toBeUndefined()
+  })
+})
+
+describe('MealieClient fixes', () => {
+  it('sends the full shopping item when toggling so other fields are not reset', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse({ id: 'item-1' }))
+      .mockResolvedValueOnce(jsonResponse({ id: 'list-1', name: 'Groceries', listItems: [] }))
+    const client = new MealieClient({ baseUrl: 'http://mealie.test', token: 'token' })
+    const item = { id: 'item-1', quantity: 3, note: 'ripe', food: 'Avocado', checked: false }
+
+    await client.updateShoppingListItem('list-1', item, { checked: true })
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('http://mealie.test/api/households/shopping/items/item-1')
+    expect(init.method).toBe('PUT')
+    expect(JSON.parse(init.body as string)).toEqual({ ...item, checked: true, shoppingListId: 'list-1' })
+  })
+
+  it('resolves smaller recipe images for thumbnails', () => {
+    const client = new MealieClient({ baseUrl: 'http://mealie.test' })
+    expect(client.resolveRecipeImage({ id: 'r1', image: 'abc' }, 'min-original')).toBe('http://mealie.test/api/media/recipes/r1/images/min-original.webp')
+    expect(client.resolveRecipeImage({ id: 'r1', image: 'abc' })).toBe('http://mealie.test/api/media/recipes/r1/images/original.webp')
+    expect(client.resolveRecipeImage({ id: 'r1', image: undefined }, 'min-original')).toBeUndefined()
+  })
+
+  it('creates a long-lived API token', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ name: 'x', token: 'long-lived' }))
+    const client = new MealieClient({ baseUrl: 'http://mealie.test', token: 'session' })
+
+    await expect(client.createApiToken('Mealie Connect')).resolves.toBe('long-lived')
+    expect(fetchMock).toHaveBeenCalledWith('http://mealie.test/api/users/api-tokens', expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('reports an expired login when listing recipes returns 401', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ detail: 'Unauthorized' }, 401))
+    const client = new MealieClient({ baseUrl: 'http://mealie.test', token: 'expired' })
+    await expect(client.getRecipes()).rejects.toThrow('Please sign in again.')
+  })
+
+  it('passes sort order through to the recipe list endpoint', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ items: [] }))
+    const client = new MealieClient({ baseUrl: 'http://mealie.test', token: 'token' })
+    await client.getRecipes({ perPage: 7, orderBy: 'created_at', orderDirection: 'desc' })
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('http://mealie.test/api/recipes?page=1&perPage=7&orderBy=created_at&orderDirection=desc')
   })
 })

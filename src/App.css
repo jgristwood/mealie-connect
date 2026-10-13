@@ -2606,3 +2606,39 @@ html.native-android .app-header {
   .recipe-grid { grid-template-columns: repeat(5, minmax(0,1fr)); }
   .recipe-shelf { grid-auto-columns: 250px; }
 }
+
+/* ---------------------------------------------------------
+   ACCOUNT MANAGEMENT & HELP
+   --------------------------------------------------------- */
+.profile-list-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.profile-list-row .profile-list-item {
+  flex: 1;
+}
+
+.settings-signout-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.help-code {
+  font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+  font-size: 0.8rem;
+  padding: var(--sp-3);
+  background: var(--surface-3);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.error-message a {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+}
