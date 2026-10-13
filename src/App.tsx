@@ -24,7 +24,7 @@ import {
 } from 'lucide-react'
 import { authService } from './services/auth/auth-service'
 import { MealieClient, formatMealieTime, groupMealPlanEntriesIntoSlots, type MealPlanSlot } from './services/mealie/mealie-client'
-import { THEMES, getStoredTheme, setTheme as persistTheme } from './lib/theme'
+import { ACCENTS, THEME_MODES, getStoredTheme, setTheme as persistTheme, type ThemePreference } from './lib/theme'
 import { isAndroidPlatform, isExternalHttpUrl, isNativePlatform, openExternalUrl, removeNativeListener } from './lib/native'
 import { StepTimerButtons, TimerTray } from './components/cook-timers'
 import { useCookTimers } from './lib/use-cook-timers'
@@ -43,7 +43,6 @@ import type {
   MealieTag,
   MealieWeekPlan,
   PlannableMealType,
-  ThemeName,
 } from './types/mealie'
 import { PLANNABLE_MEAL_TYPES } from './types/mealie'
 import './App.css'
@@ -209,26 +208,49 @@ function MobileNav({ activeProfile }: { activeProfile: MealieProfile | null }) {
 }
 
 function ThemeMenu() {
-  const [current, setCurrent] = useState<ThemeName>(() => getStoredTheme())
-  const choose = (theme: ThemeName) => {
-    persistTheme(theme)
-    setCurrent(theme)
+  const [current, setCurrent] = useState<ThemePreference>(() => getStoredTheme())
+  const choose = (next: Partial<ThemePreference>) => {
+    const preference = { ...current, ...next }
+    persistTheme(preference)
+    setCurrent(preference)
   }
   return (
-    <div className="theme-menu" role="group" aria-label="Choose a color theme">
-      {THEMES.map((theme) => (
-        <button
-          key={theme.id}
-          type="button"
-          className={current === theme.id ? 'theme-swatch-btn active' : 'theme-swatch-btn'}
-          onClick={() => choose(theme.id)}
-          aria-pressed={current === theme.id}
-          title={theme.label}
-        >
-          <span className="theme-swatch-dot" style={{ backgroundColor: theme.swatch }} aria-hidden="true" />
-          <span>{theme.label}</span>
-        </button>
-      ))}
+    <div className="theme-menu">
+      <div className="theme-menu-group">
+        <p className="theme-menu-label" id="theme-mode-label">Mode</p>
+        <div className="segmented" role="radiogroup" aria-labelledby="theme-mode-label">
+          {THEME_MODES.map((mode) => (
+            <button
+              key={mode.id}
+              type="button"
+              role="radio"
+              aria-checked={current.mode === mode.id}
+              className={current.mode === mode.id ? 'segmented-btn active' : 'segmented-btn'}
+              onClick={() => choose({ mode: mode.id })}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="theme-menu-group">
+        <p className="theme-menu-label" id="theme-accent-label">Accent</p>
+        <div className="theme-accent-list" role="radiogroup" aria-labelledby="theme-accent-label">
+          {ACCENTS.map((accent) => (
+            <button
+              key={accent.id}
+              type="button"
+              role="radio"
+              aria-checked={current.accent === accent.id}
+              className={current.accent === accent.id ? 'theme-swatch-btn active' : 'theme-swatch-btn'}
+              onClick={() => choose({ accent: accent.id })}
+            >
+              <span className="theme-swatch-dot" style={{ backgroundColor: accent.swatch }} aria-hidden="true" />
+              <span>{accent.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   )
 }
@@ -1026,6 +1048,8 @@ function RecipeThumbnail({ activeProfile, recipe, className = 'recipe-thumbnail'
   size?: 'original' | 'min-original'
 }) {
   const [imageUrl, setImageUrl] = useState('')
+  const [usePlaceholder, setUsePlaceholder] = useState(false)
+  const [loaded, setLoaded] = useState(false)
   const [visible, setVisible] = useState(false)
   const imageRef = useRef<HTMLImageElement>(null)
   const { id: recipeId, image: recipeImage } = recipe
@@ -1049,12 +1073,19 @@ function RecipeThumbnail({ activeProfile, recipe, className = 'recipe-thumbnail'
     if (!visible) return
     const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
     const sourceUrl = client.resolveRecipeImage({ id: recipeId, image: recipeImage }, size)
-    if (!sourceUrl) return
+    setLoaded(false)
+    setUsePlaceholder(false)
+    if (!sourceUrl) { setUsePlaceholder(true); return }
     let disposed = false
-    client.loadRecipeImage(sourceUrl).then((nextImageUrl) => {
-      if (disposed) { URL.revokeObjectURL(nextImageUrl); return }
-      setImageUrl(nextImageUrl)
-    }).catch(() => setImageUrl(''))
+    // Some recipes have no resized copy on the server; fall back to the original.
+    const fallbackUrl = size === 'original' ? undefined : client.resolveRecipeImage({ id: recipeId, image: recipeImage }, 'original')
+    client.loadRecipeImage(sourceUrl)
+      .catch((error: unknown) => (fallbackUrl ? client.loadRecipeImage(fallbackUrl) : Promise.reject(error)))
+      .then((nextImageUrl) => {
+        if (disposed) { URL.revokeObjectURL(nextImageUrl); return }
+        setImageUrl(nextImageUrl)
+      })
+      .catch(() => { if (!disposed) { setImageUrl(''); setUsePlaceholder(true) } })
     return () => {
       disposed = true
       setImageUrl((currentImageUrl) => {
@@ -1063,7 +1094,17 @@ function RecipeThumbnail({ activeProfile, recipe, className = 'recipe-thumbnail'
       })
     }
   }, [activeProfile, recipeId, recipeImage, size, visible])
-  return <img ref={imageRef} className={className} src={imageUrl || defaultRecipeImage} alt="" />
+  const src = imageUrl || (usePlaceholder ? defaultRecipeImage : undefined)
+  return (
+    <img
+      ref={imageRef}
+      className={className}
+      src={src}
+      alt=""
+      data-loaded={loaded && Boolean(src) ? 'true' : 'false'}
+      onLoad={() => setLoaded(true)}
+    />
+  )
 }
 
 function RecipesPage({ activeProfile, recipes, categories, tags, searchTerm, setSearchTerm, selectedCategories, setSelectedCategories, selectedTags, setSelectedTags, loading, loadingMore, hasMore, onLoadMore, error }: {

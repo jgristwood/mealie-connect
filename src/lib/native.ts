@@ -3,7 +3,7 @@ import { Capacitor, type PluginListenerHandle } from '@capacitor/core'
 import { Keyboard, KeyboardResize } from '@capacitor/keyboard'
 import { SplashScreen } from '@capacitor/splash-screen'
 import { StatusBar, Style } from '@capacitor/status-bar'
-import type { ThemeName } from '../types/mealie'
+import type { ResolvedMode } from '../types/mealie'
 
 export function isNativePlatform(): boolean {
   return Capacitor.isNativePlatform()
@@ -13,22 +13,20 @@ export function isAndroidPlatform(): boolean {
   return Capacitor.getPlatform() === 'android'
 }
 
-const STATUS_BAR_COLORS: Record<ThemeName, string> = {
-  purple: '#713a72',
-  blue: '#2f5fae',
-  red: '#b1443b',
-  green: '#3d7a53',
-  dark: '#1c1a20',
+/** Status bar matches the page background so it blends with the header. */
+const STATUS_BAR_COLORS: Record<ResolvedMode, string> = {
+  light: '#faf6ef',
+  dark: '#12100e',
 }
 
-export async function configureNativeUi(theme: ThemeName): Promise<void> {
+export async function configureNativeUi(mode: ResolvedMode): Promise<void> {
   if (!isNativePlatform()) return
 
   if (isAndroidPlatform()) {
     document.documentElement.classList.add('native-android')
   }
 
-  await applyNativeTheme(theme)
+  await applyNativeTheme(mode)
 
   try {
     await StatusBar.setOverlaysWebView({ overlay: false })
@@ -51,15 +49,16 @@ export async function configureNativeUi(theme: ThemeName): Promise<void> {
   }
 }
 
-export async function applyNativeTheme(theme: ThemeName): Promise<void> {
+export async function applyNativeTheme(mode: ResolvedMode): Promise<void> {
   if (!isNativePlatform()) return
 
-  const isDark = theme === 'dark'
-  const color = STATUS_BAR_COLORS[theme]
+  const isDark = mode === 'dark'
+  const color = STATUS_BAR_COLORS[mode]
 
   try {
     await StatusBar.setBackgroundColor({ color })
-    await StatusBar.setStyle({ style: isDark ? Style.Light : Style.Dark })
+    // Style.Dark = light icons for dark backgrounds; Style.Light = dark icons.
+    await StatusBar.setStyle({ style: isDark ? Style.Dark : Style.Light })
   } catch (error) {
     console.warn('Unable to apply native theme colors.', error)
   }

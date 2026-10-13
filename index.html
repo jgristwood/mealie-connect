@@ -3,45 +3,81 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#7c3aed" />
+    <meta name="theme-color" content="#faf6ef" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#12100e" media="(prefers-color-scheme: dark)" />
     <meta
       name="description"
       content="Mealie Connect — Your Mealie cooking companion"
     />
     <link rel="icon" type="image/svg+xml" href="/mealie-connect-logo.svg" />
     <title>Mealie Connect</title>
+    <script>
+      // Apply the saved light/dark mode before first paint to avoid a flash.
+      // Mirrors getStoredTheme() in src/lib/theme.ts, including legacy themes.
+      (function () {
+        try {
+          var legacy = { purple: ['light', 'purple'], blue: ['dark', 'blue'], red: ['dark', 'red'], green: ['dark', 'green'], dark: ['dark', 'purple'] }
+          var old = legacy[localStorage.getItem('mealie-connect-theme')] || ['light', 'purple']
+          var mode = localStorage.getItem('mealie-connect-theme-mode') || old[0]
+          var accent = localStorage.getItem('mealie-connect-accent') || old[1]
+          if (mode === 'system') mode = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+          document.documentElement.setAttribute('data-mode', mode)
+          document.documentElement.setAttribute('data-accent', accent)
+        } catch (error) {
+          document.documentElement.setAttribute('data-mode', 'light')
+        }
+      })()
+    </script>
     <style>
-      body {
-        background: #f5f1eb;
+      html, body {
+        margin: 0;
+        background: #faf6ef;
+      }
+
+      html[data-mode='dark'], html[data-mode='dark'] body {
+        background: #12100e;
       }
 
       .app-loading-shell {
-        min-height: 100vh;
+        min-height: 100dvh;
         display: grid;
         place-items: center;
         padding: 32px 24px;
-        background: #f5f1eb;
-        color: #241f29;
-        font-family: "Avenir Next", "Segoe UI", sans-serif;
+        color: #171310;
+        font-family: Georgia, 'Times New Roman', serif;
+      }
+
+      html[data-mode='dark'] .app-loading-shell {
+        color: #f8f2e9;
       }
 
       .app-loading-brand {
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 12px;
+        gap: 14px;
         text-align: center;
+        animation: app-loading-breathe 1.6s ease-in-out infinite;
       }
 
       .app-loading-brand img {
-        width: 84px;
-        height: 84px;
+        width: 72px;
+        height: 72px;
+        filter: brightness(0);
+      }
+
+      html[data-mode='dark'] .app-loading-brand img {
+        filter: brightness(0) invert(96%);
       }
 
       .app-loading-brand span {
-        font-size: 1.25rem;
-        font-weight: 800;
-        letter-spacing: 0.02em;
+        font-size: 1.4rem;
+        letter-spacing: -0.02em;
+      }
+
+      @keyframes app-loading-breathe {
+        0%, 100% { opacity: 0.55; }
+        50% { opacity: 1; }
       }
     </style>
   </head>

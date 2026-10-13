@@ -128,7 +128,10 @@ export interface MealieWeekPlan {
 export const PLANNABLE_MEAL_TYPES = ['breakfast', 'lunch', 'dinner'] as const
 export type PlannableMealType = (typeof PLANNABLE_MEAL_TYPES)[number]
 
-export type ThemeName = 'purple' | 'blue' | 'red' | 'green' | 'dark'
+/** Appearance preference; "system" follows the device's light/dark setting. */
+export type ThemeMode = 'light' | 'dark' | 'system'
+export type ResolvedMode = 'light' | 'dark'
+export type AccentName = 'purple' | 'blue' | 'red' | 'green'
 
 export type IngredientMatchMode = 'any' | 'all'
 
