@@ -30,6 +30,13 @@ export interface MealieIngredient {
   unit?: string
   note?: string
   display?: string
+  /** Section heading (e.g. "For the sauce") that starts at this ingredient. */
+  title?: string
+}
+
+export interface MealieRecipeNote {
+  title?: string
+  text?: string
 }
 
 export interface MealieInstructionStep {
@@ -63,7 +70,7 @@ export interface MealieRecipeSummary {
 export interface MealieRecipeDetail extends MealieRecipeSummary {
   ingredients?: MealieIngredient[]
   instructions?: MealieInstructionStep[]
-  notes?: string
+  notes?: MealieRecipeNote[]
   url?: string
   rating?: number
 }

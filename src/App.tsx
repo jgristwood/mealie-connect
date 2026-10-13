@@ -7,11 +7,14 @@ import { Network } from '@capacitor/network'
 import {
   BookOpen,
   Calendar,
+  Check,
   ChevronLeft,
   ChevronRight,
   Dice5,
   Download,
   Home,
+  ListChecks,
+  Minus,
   Plus,
   Search,
   Settings,
@@ -23,10 +26,14 @@ import { authService } from './services/auth/auth-service'
 import { MealieClient, formatMealieTime, groupMealPlanEntriesIntoSlots, type MealPlanSlot } from './services/mealie/mealie-client'
 import { THEMES, getStoredTheme, setTheme as persistTheme } from './lib/theme'
 import { isAndroidPlatform, isExternalHttpUrl, isNativePlatform, openExternalUrl, removeNativeListener } from './lib/native'
+import { StepTimerButtons, TimerTray } from './components/cook-timers'
+import { useCookTimers } from './lib/use-cook-timers'
+import { canScaleIngredient, formatQuantity, scaleIngredientText } from './lib/ingredients'
 import defaultRecipeImage from './assets/default-image.jpg'
 import type {
   AuthMethod,
   MealieCategory,
+  MealieIngredient,
   MealieInstructionStep,
   MealieProfile,
   MealieRecipeDetail,
@@ -457,14 +464,48 @@ function App() {
   )
 }
 
+const PLANNED_HERO_LABELS: Record<PlannableMealType, string> = {
+  breakfast: "Today's breakfast",
+  lunch: "Today's lunch",
+  dinner: "Tonight's dinner",
+}
+
+/** Picks the next meal still to come today that has a recipe attached, so
+ * the home hero shows what's actually planned instead of a random recipe. */
+function pickPlannedHero(entries: MealieWeekPlan[], hour: number): { recipe: MealieRecipeSummary; label: string } | null {
+  const upcoming: PlannableMealType[] = hour < 10 ? ['breakfast', 'lunch', 'dinner'] : hour < 14 ? ['lunch', 'dinner'] : ['dinner']
+  for (const mealType of upcoming) {
+    const entry = entries.find((candidate) => (candidate.entryType ?? '').toLowerCase() === mealType && candidate.recipe?.id)
+    if (entry?.recipe) return { recipe: entry.recipe, label: PLANNED_HERO_LABELS[mealType] }
+  }
+  return null
+}
+
 function HomePage({ activeProfile, recipes, loading, error }: {
   activeProfile: MealieProfile | null
   recipes: MealieRecipeSummary[]
   loading: boolean
   error: string
 }) {
-  const featured = recipes[0] ?? null
-  const recent = useMemo(() => recipes.slice(1, 7), [recipes])
+  const [todayEntries, setTodayEntries] = useState<MealieWeekPlan[]>([])
+  const [todayLoaded, setTodayLoaded] = useState(false)
+
+  useEffect(() => {
+    if (!activeProfile) { setTodayEntries([]); setTodayLoaded(false); return }
+    let cancelled = false
+    const todayKey = toDateKey(new Date())
+    const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
+    client.getMealPlans(todayKey, todayKey)
+      .then((entries) => { if (!cancelled) setTodayEntries(entries.filter((entry) => !entry.date || entry.date === todayKey)) })
+      .catch(() => { if (!cancelled) setTodayEntries([]) })
+      .finally(() => { if (!cancelled) setTodayLoaded(true) })
+    return () => { cancelled = true }
+  }, [activeProfile])
+
+  const planned = useMemo(() => pickPlannedHero(todayEntries, new Date().getHours()), [todayEntries])
+  const featured = planned?.recipe ?? recipes[0] ?? null
+  const recent = useMemo(() => (planned ? recipes.slice(0, 6) : recipes.slice(1, 7)), [planned, recipes])
+  const todaySlots = useMemo(() => groupMealPlanEntriesIntoSlots(todayEntries), [todayEntries])
 
   return (
     <div className="app-page">
@@ -512,7 +553,7 @@ function HomePage({ activeProfile, recipes, loading, error }: {
                 <RecipeThumbnail activeProfile={activeProfile} recipe={featured} className="hero-image" size="original" />
                 <div className="hero-gradient" aria-hidden="true" />
                 <div className="hero-content">
-                  <p className="eyebrow hero-eyebrow">{featured.categories?.[0]?.name ?? 'Featured recipe'}</p>
+                  <p className="eyebrow hero-eyebrow">{planned ? planned.label : featured.categories?.[0]?.name ?? 'Featured recipe'}</p>
                   <h1 className="hero-title">{featured.name}</h1>
                   {featured.description ? <p className="hero-description">{featured.description}</p> : null}
                   <div className="hero-meta">
@@ -546,6 +587,41 @@ function HomePage({ activeProfile, recipes, loading, error }: {
             )}
 
             {error ? <div style={{marginTop: 'var(--sp-4)'}}><ErrorMessage message={error} activeProfile={activeProfile} /></div> : null}
+
+            {todayLoaded ? (
+              <section className="home-section">
+                <div className="section-header">
+                  <div>
+                    <p className="eyebrow">{new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p>
+                    <h2 className="section-title">Today's plan</h2>
+                  </div>
+                  <Link className="btn-ghost btn-sm" to="/meal-plan">Open meal plan</Link>
+                </div>
+                <div className="today-plan-grid">
+                  {PLANNABLE_MEAL_TYPES.map((mealType) => {
+                    const entries = todaySlots.find((slot) => slot.entryType === mealType)?.entries ?? []
+                    return (
+                      <div key={mealType} className="today-plan-card">
+                        <p className="today-plan-meal">{MEAL_TYPE_LABELS[mealType]}</p>
+                        {entries.length === 0 ? (
+                          <Link className="today-plan-empty" to="/meal-plan">Nothing planned · Add</Link>
+                        ) : (
+                          <ul className="today-plan-list">
+                            {entries.map((entry) => (
+                              <li key={entry.id}>
+                                {entry.recipe?.slug
+                                  ? <Link to={`/recipes/${entry.recipe.slug}`}>{entry.recipe.name ?? entry.title}</Link>
+                                  : <span>{entry.recipe?.name ?? entry.title ?? entry.text ?? 'Untitled meal'}</span>}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
+            ) : null}
 
             {recent.length > 0 ? (
               <section className="home-section">
@@ -1131,14 +1207,88 @@ function RecipesPage({ activeProfile, recipes, categories, tags, searchTerm, set
   )
 }
 
+/** Servings stepper. With known base servings it steps by one serving;
+ * otherwise it steps the multiplier by ½. */
+function ServingsScaler({ baseServings, scale, onChange }: {
+  baseServings?: number
+  scale: number
+  onChange: (scale: number) => void
+}) {
+  const servings = baseServings ? Math.round(baseServings * scale * 100) / 100 : undefined
+  const decrease = () => {
+    if (baseServings && servings !== undefined) onChange(Math.max(1, servings - 1) / baseServings)
+    else onChange(Math.max(0.5, scale - 0.5))
+  }
+  const increase = () => {
+    if (baseServings && servings !== undefined) onChange((servings + 1) / baseServings)
+    else onChange(scale + 0.5)
+  }
+  const atMinimum = baseServings ? (servings ?? 1) <= 1 : scale <= 0.5
+  return (
+    <div className="servings-scaler" role="group" aria-label="Adjust servings">
+      <button type="button" className="servings-scaler-btn" onClick={decrease} disabled={atMinimum} aria-label="Fewer servings"><Minus /></button>
+      <span className="servings-scaler-value" aria-live="polite">
+        {servings !== undefined ? `${formatQuantity(servings)} serving${servings === 1 ? '' : 's'}` : `×${formatQuantity(scale)}`}
+      </span>
+      <button type="button" className="servings-scaler-btn" onClick={increase} aria-label="More servings"><Plus /></button>
+      {scale !== 1 ? <button type="button" className="btn-ghost btn-sm" onClick={() => onChange(1)}>Reset</button> : null}
+    </div>
+  )
+}
+
+/** Ingredient list with section headings and tap-to-check-off. */
+function IngredientChecklist({ ingredients, scale, checked, onToggle }: {
+  ingredients: MealieIngredient[]
+  scale: number
+  checked: Set<number>
+  onToggle: (index: number) => void
+}) {
+  if (ingredients.length === 0) return <ul className="ingredient-list"><li className="ingredient-item">No ingredients listed.</li></ul>
+  return (
+    <ul className="ingredient-list">
+      {ingredients.map((ingredient, index) => (
+        <li key={`${ingredient.id ?? 'ingredient'}-${index}`} className="ingredient-entry">
+          {ingredient.title ? <p className="ingredient-section-title">{ingredient.title}</p> : null}
+          <label className={checked.has(index) ? 'ingredient-item ingredient-check checked' : 'ingredient-item ingredient-check'}>
+            <input type="checkbox" checked={checked.has(index)} onChange={() => onToggle(index)} />
+            <span>{scaleIngredientText(ingredient, scale)}</span>
+          </label>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+function useCheckedSet(resetKey: unknown) {
+  const [checked, setChecked] = useState<Set<number>>(() => new Set())
+  useEffect(() => { setChecked(new Set()) }, [resetKey])
+  const toggle = useCallback((index: number) => {
+    setChecked((current) => {
+      const next = new Set(current)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
+  }, [])
+  return [checked, toggle] as const
+}
+
+function parseScaleParam(search: string): number {
+  const value = Number.parseFloat(new URLSearchParams(search).get('scale') ?? '')
+  return Number.isFinite(value) && value > 0 && value <= 50 ? value : 1
+}
+
 function RecipeDetailPage({ activeProfile }: { activeProfile: MealieProfile | null }) {
   const { slug } = useParams()
+  const location = useLocation()
   const [recipe, setRecipe] = useState<MealieRecipeDetail | null>(null)
   const [imageUrl, setImageUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [showShoppingModal, setShowShoppingModal] = useState(false)
   const [showMealPlanModal, setShowMealPlanModal] = useState(false)
+  const [scale, setScale] = useState(() => parseScaleParam(location.search))
+  const [checkedIngredients, toggleIngredient] = useCheckedSet(slug)
 
   useEffect(() => {
     if (!activeProfile || !slug) { setRecipe(null); return }
@@ -1163,6 +1313,9 @@ function RecipeDetailPage({ activeProfile }: { activeProfile: MealieProfile | nu
 
   const steps = recipe ? normalizeInstructionSteps(recipe) : []
   const ingredients = recipe?.ingredients ?? []
+  const notes = recipe?.notes ?? []
+  const scalable = ingredients.some(canScaleIngredient)
+  const cookPath = recipe ? `/cook/${recipe.slug || recipe.id}${scale !== 1 ? `?scale=${scale}` : ''}` : ''
 
   return (
     <div className="app-page">
@@ -1170,11 +1323,11 @@ function RecipeDetailPage({ activeProfile }: { activeProfile: MealieProfile | nu
       <main className="page-content">
         <div className="sticky-back-bar">
           <Link className="btn-ghost btn-sm" to="/recipes"><ChevronLeft /> Recipes</Link>
-        {recipe ? <Link className="btn-primary btn-sm" to={`/cook/${recipe.slug || recipe.id}`}><Utensils /> Cook this</Link> : null}
+        {recipe ? <Link className="btn-primary btn-sm" to={cookPath}><Utensils /> Cook this</Link> : null}
         </div>
 
         {loading ? <p style={{color:'var(--text-muted)', padding:'var(--sp-8) 0'}}>Loading recipe...</p> : null}
-        {error ? <p className="error-message">{error}</p> : null}
+        <ErrorMessage message={error} activeProfile={activeProfile} />
         {!recipe && !loading && !error ? <p className="empty-state-text">No recipe found.</p> : null}
 
         {recipe ? (
@@ -1205,17 +1358,8 @@ function RecipeDetailPage({ activeProfile }: { activeProfile: MealieProfile | nu
                 <div className="section-header">
                   <h2 className="detail-ingredients-heading">Ingredients</h2>
                 </div>
-                <ul className="ingredient-list">
-                  {ingredients.length > 0 ? ingredients.map((ingredient, index) => {
-                    const ingredientText = ingredient.display ?? ingredient.note ?? `${ingredient.quantity ?? ""} ${ingredient.unit ?? ""} ${ingredient.food ?? ""}`.trim()
-                    return (
-                      <li key={`${ingredient.id ?? "ingredient"}-${index}`} className="ingredient-item">
-                        <span className="ingredient-bullet" aria-hidden="true" />
-                        {ingredientText}
-                      </li>
-                    )
-                  }) : <li className="ingredient-item">No ingredients listed.</li>}
-                </ul>
+                {scalable ? <ServingsScaler baseServings={recipe.servings} scale={scale} onChange={setScale} /> : null}
+                <IngredientChecklist ingredients={ingredients} scale={scale} checked={checkedIngredients} onToggle={toggleIngredient} />
               </aside>
 
               <section className="detail-content">
@@ -1224,17 +1368,32 @@ function RecipeDetailPage({ activeProfile }: { activeProfile: MealieProfile | nu
                   {steps.length > 0 ? steps.map((step, index) => (
                     <li key={`${step.id ?? "step"}-${index}`} className="instruction-step">
                       <span className="step-number">{index + 1}</span>
-                      <p className="step-text">{step.text ?? step.instruction ?? `Step ${index + 1}`}</p>
+                      <div>
+                        {step.title ? <h3 className="step-title">{step.title}</h3> : null}
+                        <p className="step-text">{step.text ?? step.instruction ?? `Step ${index + 1}`}</p>
+                      </div>
                     </li>
                   )) : <li className="instruction-step"><p className="step-text">No instructions available.</p></li>}
                 </ol>
+
+                {notes.length > 0 ? (
+                  <div className="recipe-notes">
+                    <h2 className="instructions-heading">Notes</h2>
+                    {notes.map((note, index) => (
+                      <div key={`note-${index}`} className="recipe-note">
+                        {note.title ? <h3 className="step-title">{note.title}</h3> : null}
+                        {note.text ? <p className="step-text">{note.text}</p> : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </section>
             </div>
           </>
         ) : null}
 
         {recipe && showShoppingModal && activeProfile ? (
-          <AddIngredientsToShoppingListModal activeProfile={activeProfile} recipeId={recipe.id} recipeName={recipe.name} onClose={() => setShowShoppingModal(false)} />
+          <AddIngredientsToShoppingListModal activeProfile={activeProfile} recipeId={recipe.id} recipeName={recipe.name} scale={scale} onClose={() => setShowShoppingModal(false)} />
         ) : null}
         {recipe && showMealPlanModal && activeProfile ? (
           <AddToMealPlanModal activeProfile={activeProfile} recipe={recipe} onClose={() => setShowMealPlanModal(false)} />
@@ -1244,67 +1403,199 @@ function RecipeDetailPage({ activeProfile }: { activeProfile: MealieProfile | nu
   )
 }
 
+/** Keeps the screen on while cooking: the native plugin in the Android app,
+ * the Screen Wake Lock API in browsers that support it. */
+function useKeepScreenAwake(): void {
+  useEffect(() => {
+    if (isNativePlatform()) {
+      void KeepAwake.keepAwake()
+      return () => { void KeepAwake.allowSleep() }
+    }
+    if (!('wakeLock' in navigator)) return
+    let sentinel: WakeLockSentinel | undefined
+    let disposed = false
+    const acquire = async () => {
+      try {
+        const next = await navigator.wakeLock.request('screen')
+        if (disposed) { void next.release(); return }
+        sentinel = next
+      } catch {
+        // Denied (e.g. low battery); cooking still works without it.
+      }
+    }
+    // The browser releases the lock when the tab is hidden; re-acquire on return.
+    const onVisibilityChange = () => { if (document.visibilityState === 'visible') void acquire() }
+    void acquire()
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      disposed = true
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      void sentinel?.release()
+    }
+  }, [])
+}
+
+const SWIPE_THRESHOLD_PX = 60
+
 function CookModePage({ activeProfile }: { activeProfile: MealieProfile | null }) {
   const { slug } = useParams()
+  const location = useLocation()
+  const scale = parseScaleParam(location.search)
   const [recipe, setRecipe] = useState<MealieRecipeDetail | null>(null)
   const [currentStep, setCurrentStep] = useState(0)
+  const [finished, setFinished] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [showIngredients, setShowIngredients] = useState(false)
+  const [checkedIngredients, toggleIngredient] = useCheckedSet(slug)
+  const [markState, setMarkState] = useState<'idle' | 'saving' | 'saved'>('idle')
+  const [markError, setMarkError] = useState('')
+  const touchStartX = useRef<number | null>(null)
+  const { timers, now, start: startTimer, togglePause, dismiss } = useCookTimers()
 
   useEffect(() => {
     if (!activeProfile || !slug) { setRecipe(null); return }
     const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
     setLoading(true)
     setError('')
-    client.getRecipe(slug).then((nextRecipe) => { setRecipe(nextRecipe); setCurrentStep(0) }).catch((err: Error) => setError(err.message)).finally(() => setLoading(false))
+    client.getRecipe(slug).then((nextRecipe) => { setRecipe(nextRecipe); setCurrentStep(0); setFinished(false) }).catch((err: Error) => setError(err.message)).finally(() => setLoading(false))
   }, [activeProfile, slug])
 
-  useEffect(() => {
-    if (!isNativePlatform()) return
-    let released = false
-    void KeepAwake.keepAwake()
-    return () => {
-      if (released) return
-      released = true
-      void KeepAwake.allowSleep()
-    }
-  }, [])
+  useKeepScreenAwake()
 
   const steps = recipe ? normalizeInstructionSteps(recipe) : []
   const current = steps[currentStep]
+  const isLastStep = currentStep >= steps.length - 1
+
+  const goPrevious = useCallback(() => {
+    if (finished) { setFinished(false); return }
+    setCurrentStep((value) => Math.max(0, value - 1))
+  }, [finished])
+  const goNext = useCallback(() => {
+    if (isLastStep) { setFinished(true); return }
+    setCurrentStep((value) => Math.min(steps.length - 1, value + 1))
+  }, [isLastStep, steps.length])
+
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => {
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) return
+      if (event.key === 'ArrowRight') goNext()
+      if (event.key === 'ArrowLeft') goPrevious()
+    }
+    window.addEventListener('keydown', listener)
+    return () => window.removeEventListener('keydown', listener)
+  }, [goNext, goPrevious])
+
+  const onTouchStart = (event: React.TouchEvent) => { touchStartX.current = event.touches[0]?.clientX ?? null }
+  const onTouchEnd = (event: React.TouchEvent) => {
+    const startX = touchStartX.current
+    touchStartX.current = null
+    const endX = event.changedTouches[0]?.clientX
+    if (startX === null || endX === undefined) return
+    const delta = endX - startX
+    if (delta <= -SWIPE_THRESHOLD_PX) goNext()
+    if (delta >= SWIPE_THRESHOLD_PX) goPrevious()
+  }
+
+  const markMade = async () => {
+    if (!activeProfile || !recipe) return
+    setMarkState('saving')
+    setMarkError('')
+    try {
+      const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
+      const who = activeProfile.displayName ?? activeProfile.username ?? 'Someone'
+      await client.markRecipeMade({ id: recipe.id, slug: recipe.slug || recipe.id }, `${who} made this`)
+      setMarkState('saved')
+    } catch (err) {
+      setMarkState('idle')
+      setMarkError(err instanceof Error ? err.message : 'Could not record that you made this.')
+    }
+  }
+
+  const recipePath = recipe ? `/recipes/${recipe.slug || recipe.id}${scale !== 1 ? `?scale=${scale}` : ''}` : '/recipes'
+  const ingredients = recipe?.ingredients ?? []
 
   return (
     <div className="app-page">
       <AppHeader activeProfile={activeProfile} />
       <main className="page-content narrow">
         <div className="sticky-back-bar">
-          <Link className="btn-ghost btn-sm" to={recipe ? `/recipes/${recipe.slug || recipe.id}` : "/recipes"}>
+          <Link className="btn-ghost btn-sm" to={recipePath}>
             <ChevronLeft /> Return to recipe
           </Link>
+          {recipe && ingredients.length > 0 ? (
+            <button type="button" className={showIngredients ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'} onClick={() => setShowIngredients((value) => !value)} aria-expanded={showIngredients}>
+              <ListChecks /> Ingredients
+            </button>
+          ) : null}
         </div>
 
         {loading ? <p style={{color:'var(--text-muted)', padding:'var(--sp-8) 0'}}>Loading cook mode...</p> : null}
-        {error ? <p className="error-message">{error}</p> : null}
+        <ErrorMessage message={error} activeProfile={activeProfile} />
 
-        {recipe && current ? (
+        <TimerTray timers={timers} now={now} onTogglePause={togglePause} onDismiss={dismiss} />
+
+        {recipe && showIngredients ? (
+          <section className="cook-ingredients-panel" aria-label="Ingredients">
+            {scale !== 1 ? <p className="cook-ingredients-scale">Scaled ×{formatQuantity(scale)}</p> : null}
+            <IngredientChecklist ingredients={ingredients} scale={scale} checked={checkedIngredients} onToggle={toggleIngredient} />
+          </section>
+        ) : null}
+
+        {recipe && finished ? (
+          <div className="cook-content">
+            <p className="eyebrow cook-recipe-name">{recipe.name}</p>
+            <div className="cook-step-card cook-finished-card">
+              <p className="cook-finished-title">Nice work!</p>
+              <p className="step-text">You've reached the end of the recipe.</p>
+              <div className="cook-finished-actions">
+                {markState === 'saved' ? (
+                  <p className="success-message">Added to the recipe's timeline in Mealie.</p>
+                ) : (
+                  <button type="button" className="btn-primary" onClick={() => void markMade()} disabled={markState === 'saving'}>
+                    <Check /> {markState === 'saving' ? 'Saving...' : 'I made this'}
+                  </button>
+                )}
+                {markError ? <p className="error-message">{markError}</p> : null}
+                <Link className="btn-secondary" to={recipePath}>Back to recipe</Link>
+                <button type="button" className="btn-ghost" onClick={() => { setCurrentStep(0); setFinished(false) }}>Start over</button>
+              </div>
+            </div>
+            <div className="cook-actions">
+              <button type="button" className="btn-secondary" onClick={goPrevious}>
+                <ChevronLeft /> Last step
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {recipe && current && !finished ? (
           <div className="cook-content">
             <p className="eyebrow cook-recipe-name">{recipe.name}</p>
             <p className="cook-step-label">Step {currentStep + 1} of {steps.length}</p>
             <div className="cook-progress">
               <div className="cook-progress-fill" style={{ width: `${((currentStep + 1) / steps.length) * 100}%` }} />
             </div>
-            <div className="cook-step-card">
+            <div className="cook-step-card" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
               <span className="step-number">{currentStep + 1}</span>
+              {current.title ? <h2 className="step-title">{current.title}</h2> : null}
               <p className="step-text">{current.text ?? current.instruction ?? `Step ${currentStep + 1}`}</p>
+              <StepTimerButtons
+                key={currentStep}
+                stepText={current.text ?? current.instruction ?? ''}
+                stepLabel={`Step ${currentStep + 1}`}
+                onStart={startTimer}
+              />
             </div>
             <div className="cook-actions">
-              <button type="button" className="btn-secondary" onClick={() => setCurrentStep((value) => Math.max(0, value - 1))} disabled={currentStep === 0}>
+              <button type="button" className="btn-secondary" onClick={goPrevious} disabled={currentStep === 0}>
                 <ChevronLeft /> Previous
               </button>
-              <button type="button" className="btn-primary" onClick={() => setCurrentStep((value) => Math.min(steps.length - 1, value + 1))} disabled={currentStep >= steps.length - 1}>
-                Next
+              <button type="button" className="btn-primary" onClick={goNext}>
+                {isLastStep ? <>Finish <Check /></> : <>Next <ChevronRight /></>}
               </button>
             </div>
+            <p className="cook-hint">Swipe or use the arrow keys to move between steps.</p>
           </div>
         ) : null}
       </main>
@@ -2274,10 +2565,12 @@ function AddToMealPlanModal({ activeProfile, recipe, onClose }: {
   )
 }
 
-function AddIngredientsToShoppingListModal({ activeProfile, recipeId, recipeName, onClose }: {
+function AddIngredientsToShoppingListModal({ activeProfile, recipeId, recipeName, scale = 1, onClose }: {
   activeProfile: MealieProfile
   recipeId: string
   recipeName: string
+  /** Multiplier for ingredient quantities, from the servings scaler. */
+  scale?: number
   onClose: () => void
 }) {
   useModalEscapeToClose(onClose)
@@ -2316,7 +2609,7 @@ function AddIngredientsToShoppingListModal({ activeProfile, recipeId, recipeName
       } else if (!targetListId) {
         throw new Error('Choose a shopping list.')
       }
-      const updated = await client.addRecipeIngredientsToShoppingList(targetListId, recipeId)
+      const updated = await client.addRecipeIngredientsToShoppingList(targetListId, recipeId, scale)
       setResult({ listId: targetListId, listName: targetListName, added: Math.max(0, (updated.items?.length ?? 0) - initialItemCount) })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to add ingredients.')
@@ -2339,7 +2632,7 @@ function AddIngredientsToShoppingListModal({ activeProfile, recipeId, recipeName
         ) : (
           <>
             <h3>Add ingredients</h3>
-            <p style={{color:'var(--text-secondary)', fontSize:'0.9rem', marginBottom:'var(--sp-4)'}}>{recipeName}</p>
+            <p style={{color:'var(--text-secondary)', fontSize:'0.9rem', marginBottom:'var(--sp-4)'}}>{recipeName}{scale !== 1 ? ` (quantities ×${formatQuantity(scale)})` : ''}</p>
             {loadingLists ? <p style={{color:'var(--text-muted)'}}>Loading your shopping lists...</p> : null}
             {listError ? <p className="error-message">{listError}</p> : null}
             {!loadingLists ? (

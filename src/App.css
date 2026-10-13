@@ -135,11 +135,19 @@
 html, body, #root {
   background: var(--bg);
   color: var(--text-primary);
-  color-scheme: dark;
   transition: background 160ms ease, color 160ms ease;
 }
 
-:root[data-theme='purple'] {
+/* Native form controls (checkboxes, date pickers, selects) follow the theme.
+   Set on :root only so body and #root inherit it. */
+:root {
+  color-scheme: dark;
+}
+
+:root[data-theme='purple'],
+:root[data-theme='blue'],
+:root[data-theme='red'],
+:root[data-theme='green'] {
   color-scheme: light;
 }
 
@@ -2641,4 +2649,311 @@ html.native-android .app-header {
   color: inherit;
   font-weight: 600;
   text-decoration: underline;
+}
+
+/* ---------------------------------------------------------
+   COOKING EXPERIENCE
+   --------------------------------------------------------- */
+.today-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--sp-3);
+}
+
+.today-plan-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-4) var(--sp-5);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.today-plan-meal {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.today-plan-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.today-plan-list a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.today-plan-list a:hover {
+  color: var(--accent-hover);
+}
+
+.today-plan-empty {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.today-plan-empty:hover {
+  color: var(--accent);
+}
+
+.servings-scaler {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-5);
+}
+
+.servings-scaler-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-dim);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.servings-scaler-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.servings-scaler-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.servings-scaler-value {
+  min-width: 96px;
+  text-align: center;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.ingredient-entry {
+  list-style: none;
+}
+
+.ingredient-section-title {
+  margin: var(--sp-3) 0 var(--sp-2);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.ingredient-check {
+  cursor: pointer;
+  align-items: flex-start;
+}
+
+.ingredient-check input {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  accent-color: var(--accent);
+}
+
+.ingredient-check.checked span {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+.step-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  padding-top: var(--sp-2);
+}
+
+.recipe-notes {
+  margin-top: var(--sp-10);
+}
+
+.recipe-note + .recipe-note {
+  margin-top: var(--sp-4);
+}
+
+.cook-timer-tray {
+  position: sticky;
+  top: calc(var(--nav-height) + 56px);
+  z-index: 9;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+}
+
+.cook-timer {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-4);
+  background: var(--surface-raised);
+  border: 1px solid var(--accent-border);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-sm);
+}
+
+.cook-timer.paused {
+  opacity: 0.75;
+}
+
+.cook-timer.finished {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  animation: cook-timer-pulse 1s ease-in-out infinite;
+}
+
+.cook-timer-icon {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.cook-timer.finished .cook-timer-icon,
+.cook-timer.finished .cook-timer-label,
+.cook-timer.finished .cook-timer-btn {
+  color: #fff;
+}
+
+.cook-timer-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.cook-timer-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.cook-timer-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.cook-timer-btn:hover {
+  background: var(--surface-3);
+}
+
+.cook-timer-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+@keyframes cook-timer-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.02); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cook-timer.finished { animation: none; }
+}
+
+.cook-step-timers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-5);
+}
+
+.cook-step-timers .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+
+.cook-custom-timer {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.cook-custom-timer input {
+  width: 100px;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.cook-ingredients-panel {
+  margin-top: var(--sp-4);
+  padding: var(--sp-5);
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.cook-ingredients-scale {
+  margin-bottom: var(--sp-3);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.cook-step-card {
+  touch-action: pan-y;
+}
+
+.cook-finished-card {
+  text-align: center;
+}
+
+.cook-finished-title {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.cook-finished-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-top: var(--sp-6);
+}
+
+.cook-hint {
+  margin-top: var(--sp-4);
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+@media (max-width: 620px) {
+  .today-plan-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

@@ -67,6 +67,18 @@ export function formatMealieTime(value: number | string | undefined): string | u
   return remainder === 0 ? `${hours} h` : `${hours} h ${remainder} min`
 }
 
+/** Mealie has stored servings as `recipeServings` (v2), `recipeYieldQuantity`,
+ * or a free-text `recipeYield` such as "4 servings". Copies the first usable
+ * number onto `servings`. */
+export function normalizeRecipeServings<T extends Record<string, unknown>>(recipe: T): T & { servings?: number } {
+  const candidates = [recipe.servings, recipe.recipeServings, recipe.recipeYieldQuantity, recipe.recipeYield]
+  for (const candidate of candidates) {
+    const value = typeof candidate === 'number' ? candidate : typeof candidate === 'string' ? Number.parseFloat(candidate) : Number.NaN
+    if (Number.isFinite(value) && value > 0) return { ...recipe, servings: value }
+  }
+  return { ...recipe, servings: undefined }
+}
+
 export class MealieClient {
   baseUrl: string
   token?: string
@@ -133,6 +145,7 @@ export class MealieClient {
       image?: string | boolean | null
       orgURL?: string
     }
+    const rawNotes = (value as { notes?: unknown }).notes
     const rawIngredients = recipe.ingredients ?? recipe.recipeIngredient ?? []
     const rawInstructions = recipe.instructions ?? recipe.recipeInstructions ?? []
     const ingredients = Array.isArray(rawIngredients)
@@ -162,11 +175,23 @@ export class MealieClient {
         ? `${this.baseUrl}/api/media/recipes/${encodeURIComponent(String(recipe.id))}/images/original.webp`
         : undefined
 
+    const notes = Array.isArray(rawNotes)
+      ? (rawNotes as Array<{ title?: unknown; text?: unknown }>)
+          .map((note) => ({
+            title: typeof note?.title === 'string' ? note.title : undefined,
+            text: typeof note?.text === 'string' ? note.text : undefined,
+          }))
+          .filter((note) => note.title || note.text)
+      : typeof rawNotes === 'string' && rawNotes.trim()
+        ? [{ text: rawNotes }]
+        : []
+
     return {
-      ...recipe,
+      ...(normalizeRecipeServings(value) as unknown as MealieRecipeDetail),
       image,
       ingredients,
       instructions,
+      notes,
       categories: recipe.categories ?? recipe.recipeCategory,
       totalTime: recipe.totalTime,
       prepTime: recipe.prepTime,
@@ -325,7 +350,8 @@ export class MealieClient {
     >(response, 'Failed to parse recipes')
 
     // Handle both array and paginated response formats
-    const items = Array.isArray(data) ? data : data.items ?? []
+    const items = (Array.isArray(data) ? data : data.items ?? [])
+      .map((item) => normalizeRecipeServings(item as unknown as Record<string, unknown>) as unknown as MealieRecipeSummary)
     return this.applyClientSideRecipeFilters(items, filters)
   }
 
@@ -803,6 +829,30 @@ export class MealieClient {
     }
 
     return await this.safeJsonParse<MealieWeekPlan>(response, 'Failed to parse created meal plan entry')
+  }
+
+  /** Records that the recipe was cooked: updates Mealie's "last made" date and
+   * adds an entry to the recipe's timeline, as Mealie's own "I made this" does. */
+  async markRecipeMade(recipe: { id: string; slug: string }, subject: string, timestamp = new Date().toISOString()): Promise<void> {
+    const lastMadeResponse = await fetch(`${this.baseUrl}/api/recipes/${encodeURIComponent(recipe.slug)}/last-made`, {
+      method: 'PATCH',
+      headers: this.headers(),
+      body: JSON.stringify({ timestamp }),
+    })
+
+    if (!lastMadeResponse.ok) {
+      throw new Error('Mealie could not record that you made this recipe.')
+    }
+
+    const timelineResponse = await fetch(`${this.baseUrl}/api/recipes/timeline/events`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({ recipeId: recipe.id, subject, eventType: 'comment', timestamp }),
+    })
+
+    if (!timelineResponse.ok) {
+      throw new Error('Saved the date, but Mealie could not add a timeline entry.')
+    }
   }
 
   async deleteMealPlanEntry(id: string): Promise<void> {
