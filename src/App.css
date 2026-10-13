@@ -1,6 +1,6 @@
 /* =========================================================
    MEALIE CONNECT — EDITORIAL DESIGN SYSTEM
-   Fraunces display + Inter text, warm cream / charcoal base.
+   Inter throughout, warm cream / charcoal base.
    Mode (light/dark) and accent (purple/blue/red/green) are
    independent: every accent has a light and a dark version,
    and each one tints the whole interface.
@@ -11,7 +11,7 @@
    --------------------------------------------------------- */
 :root {
   /* Type */
-  --font-display: 'Fraunces Variable', 'Fraunces', Georgia, 'Times New Roman', serif;
+  --font-display: 'Inter Variable', 'Inter', 'Segoe UI', system-ui, sans-serif;
   --font-sans: 'Inter Variable', 'Inter', 'Segoe UI', system-ui, sans-serif;
   --font-mono: 'SF Mono', 'Cascadia Code', Consolas, monospace;
 
@@ -285,8 +285,7 @@ html.native-android .app-header {
 .header-brand-name {
   font-family: var(--font-display);
   font-size: 1.28rem;
-  font-weight: 560;
-  font-variation-settings: 'opsz' 48;
+  font-weight: 700;
   letter-spacing: -0.02em;
   white-space: nowrap;
   overflow: hidden;
@@ -602,11 +601,9 @@ html.native-android .app-header {
 .page-intro-title {
   font-family: var(--font-display);
   font-size: clamp(2.4rem, 5.6vw, 4.4rem);
-  font-weight: 480;
-  font-variation-settings: 'opsz' 144;
+  font-weight: 660;
   line-height: 1.02;
-  letter-spacing: -0.022em;
-  word-spacing: 0.06em;
+  letter-spacing: -0.04em;
   color: var(--text-primary);
   text-wrap: balance;
 }
@@ -635,8 +632,7 @@ html.native-android .app-header {
 .section-title {
   font-family: var(--font-display);
   font-size: clamp(1.7rem, 3.2vw, 2.4rem);
-  font-weight: 480;
-  font-variation-settings: 'opsz' 96;
+  font-weight: 660;
   line-height: 1.08;
   letter-spacing: -0.025em;
 }
@@ -724,11 +720,9 @@ html.native-android .app-header {
 .hero-title {
   font-family: var(--font-display);
   font-size: clamp(2.6rem, 6.4vw, 5.4rem);
-  font-weight: 450;
-  font-variation-settings: 'opsz' 144;
+  font-weight: 680;
   line-height: 0.98;
-  letter-spacing: -0.026em;
-  word-spacing: 0.06em;
+  letter-spacing: -0.045em;
   text-wrap: balance;
 }
 
@@ -830,7 +824,7 @@ html.native-android .app-header {
 .hero-empty-title {
   font-family: var(--font-display);
   font-size: clamp(2rem, 4vw, 3rem);
-  font-weight: 480;
+  font-weight: 660;
   letter-spacing: -0.03em;
 }
 
@@ -978,8 +972,7 @@ html.native-android .app-header {
 .recipe-card-title {
   font-family: var(--font-display);
   font-size: 1.28rem;
-  font-weight: 500;
-  font-variation-settings: 'opsz' 36;
+  font-weight: 620;
   line-height: 1.18;
   letter-spacing: -0.015em;
   color: var(--text-primary);
@@ -1113,8 +1106,7 @@ a.home-tool-card:hover::after {
 .home-tool-card-title {
   font-family: var(--font-display);
   font-size: 1.6rem;
-  font-weight: 480;
-  font-variation-settings: 'opsz' 72;
+  font-weight: 660;
   line-height: 1.1;
   letter-spacing: -0.02em;
   color: var(--text-primary);
@@ -1165,8 +1157,7 @@ a.home-tool-card:hover::after {
 .import-strip h2 {
   font-family: var(--font-display);
   font-size: clamp(2rem, 4vw, 3.2rem);
-  font-weight: 450;
-  font-variation-settings: 'opsz' 144;
+  font-weight: 680;
   line-height: 1.02;
   letter-spacing: -0.03em;
 }
@@ -1215,7 +1206,7 @@ a.home-tool-card:hover::after {
 .today-plan-list li {
   font-family: var(--font-display);
   font-size: 1.3rem;
-  font-weight: 480;
+  font-weight: 660;
   line-height: 1.2;
   letter-spacing: -0.015em;
   color: var(--text-primary);
@@ -1521,7 +1512,7 @@ button.chip.active:hover {
 .filter-panel-title {
   font-family: var(--font-display);
   font-size: 1.2rem;
-  font-weight: 500;
+  font-weight: 620;
   letter-spacing: -0.01em;
 }
 
@@ -1608,11 +1599,9 @@ button.chip.active:hover {
 .detail-title {
   font-family: var(--font-display);
   font-size: clamp(2.6rem, 6.4vw, 5.2rem);
-  font-weight: 450;
-  font-variation-settings: 'opsz' 144;
+  font-weight: 680;
   line-height: 0.98;
-  letter-spacing: -0.026em;
-  word-spacing: 0.06em;
+  letter-spacing: -0.045em;
   text-wrap: balance;
 }
 
@@ -1700,8 +1689,7 @@ button.chip.active:hover {
   margin-bottom: var(--sp-6);
   font-family: var(--font-display);
   font-size: 1.9rem;
-  font-weight: 480;
-  font-variation-settings: 'opsz' 96;
+  font-weight: 660;
   letter-spacing: -0.025em;
   color: var(--text-primary);
 }
@@ -1776,8 +1764,7 @@ button.chip.active:hover {
   margin: var(--sp-6) 0 var(--sp-2);
   font-family: var(--font-display);
   font-size: 1.05rem;
-  font-style: italic;
-  font-weight: 450;
+  font-weight: 680;
   color: var(--accent);
 }
 
@@ -1853,8 +1840,7 @@ button.chip.active:hover {
   border: 1px solid var(--accent-border);
   font-family: var(--font-display);
   font-size: 1.3rem;
-  font-style: italic;
-  font-weight: 450;
+  font-weight: 680;
   color: var(--accent);
 }
 
@@ -1862,7 +1848,7 @@ button.chip.active:hover {
   margin-bottom: var(--sp-2);
   font-family: var(--font-display);
   font-size: 1.25rem;
-  font-weight: 500;
+  font-weight: 620;
   letter-spacing: -0.015em;
   color: var(--text-primary);
 }
@@ -1966,8 +1952,7 @@ button.chip.active:hover {
   padding-top: 0;
   font-family: var(--font-display);
   font-size: clamp(1.45rem, 3.2vw, 2.15rem);
-  font-weight: 400;
-  font-variation-settings: 'opsz' 48;
+  font-weight: 500;
   line-height: 1.42;
   letter-spacing: -0.012em;
   color: var(--text-primary);
@@ -2015,8 +2000,7 @@ button.chip.active:hover {
 .cook-finished-title {
   font-family: var(--font-display);
   font-size: clamp(2.4rem, 5vw, 3.6rem);
-  font-style: italic;
-  font-weight: 450;
+  font-weight: 680;
   letter-spacing: -0.03em;
   color: var(--accent);
 }
@@ -2091,7 +2075,7 @@ button.chip.active:hover {
 .cook-timer-time {
   font-family: var(--font-display);
   font-size: 1.35rem;
-  font-weight: 500;
+  font-weight: 620;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
 }
@@ -2196,7 +2180,7 @@ button.cook-timer-chip:hover {
 .shopping-list-card-name {
   font-family: var(--font-display);
   font-size: 1.55rem;
-  font-weight: 480;
+  font-weight: 660;
   line-height: 1.15;
   letter-spacing: -0.02em;
 }
@@ -2366,7 +2350,7 @@ button.cook-timer-chip:hover {
 .meal-plan-day-heading-name {
   font-family: var(--font-display);
   font-size: clamp(2rem, 4vw, 3rem);
-  font-weight: 450;
+  font-weight: 680;
   letter-spacing: -0.03em;
 }
 
@@ -2430,7 +2414,7 @@ button.cook-timer-chip:hover {
 .meal-plan-week-day-number {
   font-family: var(--font-display);
   font-size: 1.6rem;
-  font-weight: 450;
+  font-weight: 680;
   line-height: 1;
 }
 
@@ -2478,7 +2462,7 @@ button.cook-timer-chip:hover {
 .meal-slot-recipe-name {
   font-family: var(--font-display);
   font-size: 1.02rem;
-  font-weight: 480;
+  font-weight: 660;
   line-height: 1.25;
   color: var(--text-primary);
   overflow-wrap: anywhere;
@@ -2520,7 +2504,7 @@ button.cook-timer-chip:hover {
   margin-bottom: var(--sp-6);
   font-family: var(--font-display);
   font-size: clamp(2rem, 4vw, 3rem);
-  font-weight: 450;
+  font-weight: 680;
   letter-spacing: -0.03em;
 }
 
@@ -2568,7 +2552,7 @@ button.meal-plan-month-cell:hover {
 .meal-plan-month-day-number {
   font-family: var(--font-display);
   font-size: 1.2rem;
-  font-weight: 450;
+  font-weight: 680;
 }
 
 .meal-plan-month-summary {
@@ -2615,7 +2599,7 @@ button.meal-plan-month-cell:hover {
 .modal-panel h3 {
   font-family: var(--font-display);
   font-size: 1.9rem;
-  font-weight: 480;
+  font-weight: 660;
   letter-spacing: -0.025em;
   line-height: 1.1;
 }
@@ -2658,7 +2642,7 @@ button.meal-plan-month-cell:hover {
   background: transparent;
   font-family: var(--font-display);
   font-size: 1.1rem;
-  font-weight: 450;
+  font-weight: 680;
   text-align: left;
   color: var(--text-primary);
   transition: background var(--ease-fast), color var(--ease-fast), padding var(--ease-fast);
@@ -2736,8 +2720,7 @@ button.meal-plan-month-cell:hover {
   color: var(--accent-contrast);
   font-family: var(--font-display);
   font-size: 1.6rem;
-  font-style: italic;
-  font-weight: 450;
+  font-weight: 680;
   box-shadow: 0 24px 60px -20px var(--accent), inset 0 -6px 0 color-mix(in oklab, black 15%, transparent);
   transition: transform var(--ease-base), box-shadow var(--ease-base);
 }
@@ -2832,10 +2815,9 @@ button.meal-plan-month-cell:hover {
 .roulette-result-body h2 {
   font-family: var(--font-display);
   font-size: clamp(2rem, 4vw, 3.2rem);
-  font-weight: 450;
+  font-weight: 680;
   line-height: 1.02;
-  letter-spacing: -0.022em;
-  word-spacing: 0.06em;
+  letter-spacing: -0.04em;
 }
 
 .roulette-result-body > p:not(.eyebrow) {
@@ -2870,7 +2852,7 @@ button.meal-plan-month-cell:hover {
 .setup-section h2 {
   font-family: var(--font-display);
   font-size: 1.5rem;
-  font-weight: 480;
+  font-weight: 660;
   letter-spacing: -0.02em;
 }
 
@@ -2897,8 +2879,7 @@ button.meal-plan-month-cell:hover {
   color: var(--accent-contrast);
   font-family: var(--font-display);
   font-size: 1.8rem;
-  font-style: italic;
-  font-weight: 450;
+  font-weight: 680;
 }
 
 .settings-profile-info {
@@ -2911,7 +2892,7 @@ button.meal-plan-month-cell:hover {
 .settings-profile-name {
   font-family: var(--font-display);
   font-size: 1.4rem;
-  font-weight: 480;
+  font-weight: 660;
   letter-spacing: -0.015em;
 }
 
@@ -3158,7 +3139,7 @@ button.meal-plan-month-cell:hover {
 .cors-solution-panel h3 {
   font-family: var(--font-display);
   font-size: 1.3rem;
-  font-weight: 500;
+  font-weight: 620;
 }
 
 /* ---------------------------------------------------------
@@ -3194,7 +3175,7 @@ button.meal-plan-month-cell:hover {
 .empty-state-title {
   font-family: var(--font-display);
   font-size: clamp(1.8rem, 4vw, 2.6rem);
-  font-weight: 450;
+  font-weight: 680;
   letter-spacing: -0.03em;
 }
 
