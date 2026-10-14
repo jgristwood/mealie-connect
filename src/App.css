@@ -3253,6 +3253,45 @@ button.meal-plan-month-cell:hover {
 }
 
 /* ---------------------------------------------------------
+   IMPORT REVIEW
+   --------------------------------------------------------- */
+.chip-new {
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: color-mix(in oklab, var(--accent-contrast) 22%, transparent);
+  font-size: 0.68rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.organizer-add {
+  margin-top: var(--sp-2);
+}
+
+.organizer-add input {
+  flex: 1;
+  min-width: 0;
+}
+
+.import-review-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.import-review-discard {
+  margin-left: auto;
+  color: var(--danger);
+}
+
+@media (max-width: 700px) {
+  .import-review-actions .btn-primary { flex: 1 1 100%; }
+  .import-review-discard { margin-left: 0; }
+}
+
+/* ---------------------------------------------------------
    SHOPPING ITEM EDITING
    --------------------------------------------------------- */
 .shopping-item-edit-trigger {

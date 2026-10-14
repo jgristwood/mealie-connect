@@ -358,3 +358,24 @@ describe('MealieClient CORS compatibility', () => {
     }
   })
 })
+
+describe('recipe editing after import', () => {
+  it('patches only the changed fields and returns the renamed recipe', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      jsonResponse({ id: 'recipe-9', name: 'Chicken Parmesan', slug: 'chicken-parmesan', recipeServings: 6, recipeIngredient: [], recipeInstructions: [] }),
+    )
+    const client = new MealieClient({ baseUrl: 'http://mealie.test', token: 'token' })
+
+    const saved = await client.updateRecipe('imported-slug', {
+      name: 'Chicken Parmesan',
+      tags: [{ id: 'tag-1', name: 'Quick', slug: 'quick' }],
+      recipeServings: 6,
+    })
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('http://mealie.test/api/recipes/imported-slug')
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit
+    expect(init.method).toBe('PATCH')
+    expect(JSON.parse(String(init.body))).toEqual({ name: 'Chicken Parmesan', tags: [{ id: 'tag-1', name: 'Quick', slug: 'quick' }], recipeServings: 6 })
+    expect(saved).toMatchObject({ slug: 'chicken-parmesan', servings: 6 })
+  })
+})

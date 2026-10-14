@@ -35,6 +35,14 @@ export interface RecipeQueryFilters {
 
 export type RecipeImageSize = 'original' | 'min-original' | 'tiny-original'
 
+/** Recipe fields that can be changed after import, in Mealie's field names. */
+export interface RecipeChanges {
+  name?: string
+  recipeCategory?: MealieCategory[]
+  tags?: MealieTag[]
+  recipeServings?: number
+}
+
 type MealieShoppingListResponse = MealieShoppingList & { listItems?: MealieShoppingList['items'] }
 
 const TIME_UNIT_MINUTES: Array<[RegExp, number]> = [
@@ -580,6 +588,59 @@ export class MealieClient {
     }
 
     return undefined
+  }
+
+  /** Updates only the given recipe fields. Mealie regenerates the slug when
+   * the name changes, so use the slug on the returned recipe afterwards. */
+  async updateRecipe(slug: string, changes: RecipeChanges): Promise<MealieRecipeDetail> {
+    const response = await fetch(`${this.baseUrl}/api/recipes/${encodeURIComponent(slug)}`, {
+      method: 'PATCH',
+      headers: this.headers(),
+      body: JSON.stringify(changes),
+    })
+
+    if (!response.ok) {
+      if (response.status === 401) throw new Error('Mealie authentication failed. Please sign in again.')
+      if (response.status === 403) throw new Error('Mealie did not allow changes to this recipe.')
+      const message = this.extractMeaningfulErrorMessage(this.summarizeResponseBody(await response.text()))
+      throw new Error(message ? `Could not save the recipe: ${message}` : 'Could not save the recipe.')
+    }
+
+    const data = await this.safeJsonParse<Record<string, unknown>>(response, 'Failed to parse saved recipe')
+    return this.normalizeRecipeDetail(data)
+  }
+
+  async deleteRecipe(slug: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/api/recipes/${encodeURIComponent(slug)}`, {
+      method: 'DELETE',
+      headers: this.headers(),
+    })
+
+    if (!response.ok) {
+      throw new Error('Could not delete that recipe.')
+    }
+  }
+
+  async createCategory(name: string): Promise<MealieCategory> {
+    return this.createOrganizer<MealieCategory>('categories', name)
+  }
+
+  async createTag(name: string): Promise<MealieTag> {
+    return this.createOrganizer<MealieTag>('tags', name)
+  }
+
+  private async createOrganizer<T>(kind: 'categories' | 'tags', name: string): Promise<T> {
+    const response = await fetch(`${this.baseUrl}/api/organizers/${kind}`, {
+      method: 'POST',
+      headers: this.headers(),
+      body: JSON.stringify({ name }),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Could not create the ${kind === 'tags' ? 'tag' : 'category'} "${name}".`)
+    }
+
+    return await this.safeJsonParse<T>(response, `Failed to parse created ${kind}`)
   }
 
   async getCategories(): Promise<MealieCategory[]> {

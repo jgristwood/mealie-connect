@@ -1104,16 +1104,64 @@ Access-Control-Allow-Headers: Authorization, Content-Type`}</pre>
   )
 }
 
+interface OrganizerChoice { id?: string; name: string; slug?: string }
+
+/** Toggleable chips for Mealie categories or tags, plus a field for adding a
+ * new one. New names are created in Mealie only when the recipe is saved. */
+function OrganizerPicker({ id, label, singular, options, selected, onChange }: {
+  id: string
+  label: string
+  /** "category" or "tag", for the add field. */
+  singular: string
+  options: OrganizerChoice[]
+  selected: OrganizerChoice[]
+  onChange: (selected: OrganizerChoice[]) => void
+}) {
+  const [draft, setDraft] = useState('')
+  const isSelected = (choice: OrganizerChoice) => selected.some((item) => item.name.toLowerCase() === choice.name.toLowerCase())
+  const toggle = (choice: OrganizerChoice) => onChange(isSelected(choice)
+    ? selected.filter((item) => item.name.toLowerCase() !== choice.name.toLowerCase())
+    : [...selected, choice])
+  const add = () => {
+    const name = draft.trim()
+    if (!name) return
+    const existing = options.find((option) => option.name.toLowerCase() === name.toLowerCase())
+    if (!isSelected(existing ?? { name })) onChange([...selected, existing ?? { name }])
+    setDraft('')
+  }
+  // Show everything selected (including new names) first, then the rest.
+  const unselected = options.filter((option) => !isSelected(option))
+  return (
+    <div className="form-field">
+      <span className="form-label" id={`${id}-label`}>{label}</span>
+      <div className="chip-list" role="group" aria-labelledby={`${id}-label`}>
+        {selected.map((choice) => (
+          <button key={`selected-${choice.name}`} type="button" className="chip active" onClick={() => toggle(choice)} aria-pressed="true">
+            {choice.name}{choice.id ? null : <span className="chip-new">new</span>}
+          </button>
+        ))}
+        {unselected.map((choice) => (
+          <button key={choice.id ?? choice.name} type="button" className="chip" onClick={() => toggle(choice)} aria-pressed="false">{choice.name}</button>
+        ))}
+      </div>
+      <div className="roulette-ingredient-input organizer-add">
+        <label className="sr-only" htmlFor={`${id}-new`}>Add a {singular}</label>
+        <input id={`${id}-new`} type="text" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); add() } }} placeholder={`Add a ${singular}`} />
+        <button type="button" className="btn-secondary btn-sm" onClick={add}>Add</button>
+      </div>
+    </div>
+  )
+}
+
 function ImportRecipePage({ activeProfile }: { activeProfile: MealieProfile | null }) {
   const navigate = useNavigate()
   const [importUrl, setImportUrl] = useState('')
   const [importing, setImporting] = useState(false)
-  const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  const [imported, setImported] = useState<MealieRecipeDetail | null>(null)
 
   const handleImport = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setMessage('')
     setError('')
     if (!activeProfile) { setError('Connect a Mealie account before importing a recipe.'); return }
     let parsedUrl: URL
@@ -1127,10 +1175,8 @@ function ImportRecipePage({ activeProfile }: { activeProfile: MealieProfile | nu
     setImporting(true)
     try {
       const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
-      const importedRecipe = await client.importRecipeFromUrl(parsedUrl.toString())
+      setImported(await client.importRecipeFromUrl(parsedUrl.toString()))
       setImportUrl('')
-      setMessage(`Imported "${importedRecipe.name}".`)
-      navigate(`/recipes/${importedRecipe.slug || importedRecipe.id}`)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to import recipe.')
     } finally {
@@ -1144,14 +1190,25 @@ function ImportRecipePage({ activeProfile }: { activeProfile: MealieProfile | nu
       <main className="page-content narrow">
         <div className="page-intro">
           <p className="eyebrow">Bring something new home</p>
-          <h1 className="page-intro-title">Import a recipe.</h1>
-          <p className="page-intro-text">Paste a recipe URL and add it to your Mealie collection.</p>
+          <h1 className="page-intro-title">{imported ? 'Recipe imported.' : 'Import a recipe.'}</h1>
+          <p className="page-intro-text">
+            {imported
+              ? 'Fine-tune the title, categories, tags, and servings, then save it to Mealie.'
+              : 'Paste a recipe URL and add it to your Mealie collection.'}
+          </p>
         </div>
         {!activeProfile ? (
           <div className="empty-state">
             <p className="empty-state-title">No account connected</p>
             <Link className="btn-primary" to="/setup">Connect to Mealie</Link>
           </div>
+        ) : imported ? (
+          <ImportReview
+            activeProfile={activeProfile}
+            recipe={imported}
+            onDone={(slug) => navigate(`/recipes/${slug}`)}
+            onDiscarded={() => setImported(null)}
+          />
         ) : (
           <section className="setup-section">
             <form onSubmit={handleImport} className="form-stack">
@@ -1159,14 +1216,122 @@ function ImportRecipePage({ activeProfile }: { activeProfile: MealieProfile | nu
                 <label className="form-label" htmlFor="import-page-url">Recipe URL</label>
                 <input id="import-page-url" className="form-input" type="url" value={importUrl} onChange={(event) => setImportUrl(event.target.value)} placeholder="https://example.com/recipe" required />
               </div>
-              {message ? <p className="success-message">{message}</p> : null}
-              {error ? <p className="error-message">{error}</p> : null}
+              {error ? <ErrorMessage message={error} activeProfile={activeProfile} /> : null}
               <button type="submit" className="btn-primary" disabled={importing}>{importing ? 'Importing...' : 'Import recipe'}</button>
             </form>
           </section>
         )}
       </main>
     </div>
+  )
+}
+
+/** Review step after an import: the recipe already exists in Mealie, so this
+ * saves changes on top of it (or deletes it if the import isn't wanted). */
+function ImportReview({ activeProfile, recipe, onDone, onDiscarded }: {
+  activeProfile: MealieProfile
+  recipe: MealieRecipeDetail
+  onDone: (slug: string) => void
+  onDiscarded: () => void
+}) {
+  const slug = recipe.slug || recipe.id
+  const [name, setName] = useState(recipe.name)
+  const [selectedCategories, setSelectedCategories] = useState<OrganizerChoice[]>(recipe.categories ?? [])
+  const [selectedTags, setSelectedTags] = useState<OrganizerChoice[]>(recipe.tags ?? [])
+  const [servings, setServings] = useState(recipe.servings ? String(recipe.servings) : '')
+  const [allCategories, setAllCategories] = useState<MealieCategory[]>([])
+  const [allTags, setAllTags] = useState<MealieTag[]>([])
+  const [busy, setBusy] = useState<'saving' | 'discarding' | null>(null)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
+    client.getCategories().then(setAllCategories).catch(() => undefined)
+    client.getTags().then(setAllTags).catch(() => undefined)
+  }, [activeProfile])
+
+  const parsedServings = servings.trim() === '' ? undefined : Number.parseFloat(servings)
+  const stepServings = (delta: number) => setServings((current) => {
+    const value = Number.parseFloat(current)
+    return String(Math.max(1, (Number.isFinite(value) ? value : 0) + delta))
+  })
+
+  /** Creates any new names in Mealie and returns the full organizer objects. */
+  const resolveOrganizers = async <T extends MealieCategory | MealieTag>(choices: OrganizerChoice[], known: T[], create: (name: string) => Promise<T>): Promise<T[]> => {
+    const resolved: T[] = []
+    for (const choice of choices) {
+      const existing = choice.id ? choice : known.find((item) => item.name.toLowerCase() === choice.name.toLowerCase())
+      resolved.push(existing?.id ? { ...existing, slug: existing.slug ?? '' } as T : await create(choice.name))
+    }
+    return resolved
+  }
+
+  const save = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!name.trim()) { setError('Give the recipe a title.'); return }
+    if (parsedServings !== undefined && !(parsedServings > 0)) { setError('Servings must be a number above 0.'); return }
+    setBusy('saving')
+    setError('')
+    try {
+      const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
+      const [recipeCategory, tags] = await Promise.all([
+        resolveOrganizers(selectedCategories, allCategories, (value) => client.createCategory(value)),
+        resolveOrganizers(selectedTags, allTags, (value) => client.createTag(value)),
+      ])
+      const saved = await client.updateRecipe(slug, {
+        name: name.trim(),
+        recipeCategory,
+        tags,
+        ...(parsedServings !== undefined ? { recipeServings: parsedServings } : {}),
+      })
+      onDone(saved.slug || saved.id)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save the recipe.')
+      setBusy(null)
+    }
+  }
+
+  const discard = async () => {
+    if (!window.confirm(`Delete "${recipe.name}" from Mealie? Use this if the import isn't what you wanted.`)) return
+    setBusy('discarding')
+    setError('')
+    try {
+      const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
+      await client.deleteRecipe(slug)
+      onDiscarded()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete the recipe.')
+      setBusy(null)
+    }
+  }
+
+  return (
+    <section className="setup-section import-review">
+      <form className="form-stack" onSubmit={save}>
+        <div className="form-field">
+          <label className="form-label" htmlFor="import-title">Title</label>
+          <input id="import-title" className="form-input" type="text" value={name} onChange={(event) => setName(event.target.value)} />
+        </div>
+        <OrganizerPicker id="import-categories" label="Categories" singular="category" options={allCategories} selected={selectedCategories} onChange={setSelectedCategories} />
+        <OrganizerPicker id="import-tags" label="Tags" singular="tag" options={allTags} selected={selectedTags} onChange={setSelectedTags} />
+        <div className="form-field">
+          <span className="form-label" id="import-servings-label">Servings</span>
+          <div className="quantity-stepper" role="group" aria-labelledby="import-servings-label">
+            <button type="button" className="servings-scaler-btn" onClick={() => stepServings(-1)} disabled={!(parsedServings !== undefined && parsedServings > 1)} aria-label="Fewer servings"><Minus /></button>
+            <input className="form-input quantity-stepper-input" type="text" inputMode="decimal" value={servings} onChange={(event) => setServings(event.target.value)} aria-labelledby="import-servings-label" placeholder="-" />
+            <button type="button" className="servings-scaler-btn" onClick={() => stepServings(1)} aria-label="More servings"><Plus /></button>
+          </div>
+        </div>
+        {error ? <ErrorMessage message={error} activeProfile={activeProfile} /> : null}
+        <div className="import-review-actions">
+          <button type="submit" className="btn-primary" disabled={busy !== null}>{busy === 'saving' ? 'Saving...' : 'Save to Mealie'}</button>
+          <button type="button" className="btn-ghost" onClick={() => onDone(slug)} disabled={busy !== null}>Keep as imported</button>
+          <button type="button" className="btn-ghost import-review-discard" onClick={() => void discard()} disabled={busy !== null}>
+            {busy === 'discarding' ? 'Deleting...' : 'Discard import'}
+          </button>
+        </div>
+      </form>
+    </section>
   )
 }
 
