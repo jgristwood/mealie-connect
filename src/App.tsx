@@ -15,6 +15,7 @@ import {
   Home,
   ListChecks,
   Minus,
+  Pencil,
   Plus,
   Refrigerator,
   Search,
@@ -2049,6 +2050,101 @@ function ShoppingListsPage({ activeProfile }: { activeProfile: MealieProfile | n
   )
 }
 
+/** Mealie returns an item's food as an object; older data may hold a string. */
+function shoppingItemFoodName(item: MealieShoppingListItem): string | undefined {
+  const food = item.food as unknown
+  if (typeof food === 'string') return food || undefined
+  return (food as { name?: string } | null | undefined)?.name || undefined
+}
+
+function shoppingItemQuantity(item: MealieShoppingListItem): number {
+  const value = typeof item.quantity === 'string' ? Number.parseFloat(item.quantity) : item.quantity
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0
+}
+
+function ShoppingItemRow({ item, onToggle, onRemove, onSave }: {
+  item: MealieShoppingListItem
+  onToggle: () => void
+  onRemove: () => void
+  onSave: (updates: { quantity: number; note: string }) => Promise<boolean>
+}) {
+  const [editing, setEditing] = useState(false)
+  const [quantity, setQuantity] = useState('')
+  const [note, setNote] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const foodName = shoppingItemFoodName(item)
+  const label = item.display || `${item.quantity ?? ''} ${item.note ?? ''}`.trim()
+
+  const startEditing = () => {
+    const current = shoppingItemQuantity(item)
+    setQuantity(current ? String(current) : '')
+    setNote(item.note ?? '')
+    setError('')
+    setEditing(true)
+  }
+
+  const parseQuantity = (value: string) => (value.trim() === '' ? 0 : Number.parseFloat(value.replace(',', '.')))
+  const parsedQuantity = parseQuantity(quantity)
+  const stepQuantity = (delta: number) => setQuantity((current) => {
+    const base = parseQuantity(current)
+    return String(Math.max(0, Math.round(((Number.isFinite(base) ? base : 0) + delta) * 100) / 100))
+  })
+
+  const save = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!Number.isFinite(parsedQuantity) || parsedQuantity < 0) { setError('Enter a quantity of 0 or more.'); return }
+    if (!foodName && !note.trim()) { setError('Enter what to buy.'); return }
+    setSaving(true)
+    setError('')
+    const saved = await onSave({ quantity: parsedQuantity, note: note.trim() })
+    setSaving(false)
+    if (saved) setEditing(false)
+  }
+
+  if (editing) {
+    return (
+      <li className="shopping-item editing">
+        <form className="shopping-item-editor" onSubmit={save}>
+          {foodName ? <p className="shopping-item-editor-food">{foodName}</p> : null}
+          <div className="shopping-item-editor-fields">
+            <div className="form-field">
+              <span className="form-label" id={`qty-label-${item.id}`}>Quantity</span>
+              <div className="quantity-stepper" role="group" aria-labelledby={`qty-label-${item.id}`}>
+                <button type="button" className="servings-scaler-btn" onClick={() => stepQuantity(-1)} disabled={!(parsedQuantity > 0)} aria-label="Decrease quantity"><Minus /></button>
+                <input className="form-input quantity-stepper-input" type="text" inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} aria-labelledby={`qty-label-${item.id}`} placeholder="0" />
+                <button type="button" className="servings-scaler-btn" onClick={() => stepQuantity(1)} aria-label="Increase quantity"><Plus /></button>
+              </div>
+            </div>
+            <div className="form-field shopping-item-editor-note">
+              <label className="form-label" htmlFor={`note-${item.id}`}>{foodName ? 'Note' : 'Item'}</label>
+              <input id={`note-${item.id}`} className="form-input" type="text" value={note} onChange={(event) => setNote(event.target.value)} placeholder={foodName ? 'Optional' : 'What to buy'} />
+            </div>
+          </div>
+          {error ? <p className="error-message">{error}</p> : null}
+          <div className="shopping-item-editor-actions">
+            <button type="button" className="btn-ghost btn-sm" onClick={() => setEditing(false)} disabled={saving}>Cancel</button>
+            <button type="submit" className="btn-primary btn-sm" disabled={saving}>{saving ? 'Saving...' : 'Save'}</button>
+          </div>
+        </form>
+      </li>
+    )
+  }
+
+  return (
+    <li className={item.checked ? 'shopping-item checked' : 'shopping-item'}>
+      <input className="shopping-item-checkbox" type="checkbox" checked={item.checked ?? false} onChange={onToggle} aria-label={`Mark ${label || 'item'} as done`} />
+      <button type="button" className="shopping-item-text shopping-item-edit-trigger" onClick={startEditing} aria-label={`Edit ${label || 'item'}`}>{label}</button>
+      <button type="button" className="shopping-item-remove btn-ghost btn-sm" onClick={startEditing} aria-label="Edit quantity">
+        <Pencil />
+      </button>
+      <button type="button" className="shopping-item-remove btn-ghost btn-sm" onClick={onRemove} aria-label="Remove item">
+        <X />
+      </button>
+    </li>
+  )
+}
+
 function ShoppingListDetailPage({ activeProfile }: { activeProfile: MealieProfile | null }) {
   const { id } = useParams()
   const [list, setList] = useState<MealieShoppingList | null>(null)
@@ -2096,6 +2192,19 @@ function ShoppingListDetailPage({ activeProfile }: { activeProfile: MealieProfil
     } catch (err) {
       setChecked(!nextChecked)
       setError(err instanceof Error ? err.message : 'Failed to update item.')
+    }
+  }
+
+  const saveItem = async (item: MealieShoppingListItem, updates: { quantity: number; note: string }): Promise<boolean> => {
+    if (!activeProfile || !list) return false
+    setError('')
+    const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
+    try {
+      setList(await client.updateShoppingListItem(list.id, item, updates))
+      return true
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to update item.')
+      return false
     }
   }
 
@@ -2177,13 +2286,13 @@ function ShoppingListDetailPage({ activeProfile }: { activeProfile: MealieProfil
             <ul className="shopping-items-list">
               {(list.items ?? []).length > 0 ? (
                 (list.items ?? []).map((item, index) => (
-                  <li key={`${item.id ?? "item"}-${index}`} className={item.checked ? "shopping-item checked" : "shopping-item"}>
-                    <input className="shopping-item-checkbox" type="checkbox" checked={item.checked ?? false} onChange={() => void toggleItem(item)} aria-label={`Mark ${item.display ?? "item"} as done`} />
-                    <span className="shopping-item-text">{item.display ?? `${item.quantity ?? ""} ${item.note ?? ""}`.trim()}</span>
-                    <button type="button" className="shopping-item-remove btn-ghost btn-sm" onClick={() => removeItem(item.id)} aria-label="Remove item">
-                      <X />
-                    </button>
-                  </li>
+                  <ShoppingItemRow
+                    key={`${item.id ?? 'item'}-${index}`}
+                    item={item}
+                    onToggle={() => void toggleItem(item)}
+                    onRemove={() => void removeItem(item.id)}
+                    onSave={(updates) => saveItem(item, updates)}
+                  />
                 ))
               ) : (
                 <li className="empty-state-text" style={{padding:'var(--sp-4)'}}>No items in this list.</li>
