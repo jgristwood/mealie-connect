@@ -16,6 +16,7 @@ import {
   ListChecks,
   Minus,
   Plus,
+  Refrigerator,
   Search,
   Settings,
   ShoppingCart,
@@ -29,9 +30,11 @@ import { isAndroidPlatform, isExternalHttpUrl, isNativePlatform, openExternalUrl
 import { StepTimerButtons, TimerTray } from './components/cook-timers'
 import { useCookTimers } from './lib/use-cook-timers'
 import { canScaleIngredient, formatQuantity, scaleIngredientText } from './lib/ingredients'
+import { findRecipesByIngredients, type IngredientFinderResult } from './lib/ingredient-finder'
 import defaultRecipeImage from './assets/default-image.jpg'
 import type {
   AuthMethod,
+  IngredientMatchMode,
   MealieCategory,
   MealieIngredient,
   MealieInstructionStep,
@@ -57,6 +60,30 @@ const MEAL_TYPE_LABELS: Record<string, string> = {
 }
 
 type ConnectivityState = 'online' | 'offline' | 'server-unreachable' | 'auth-failed'
+
+/** Recipe filters that are applied on this device rather than by Mealie. */
+interface RecipeExtraFilters {
+  maxPrepTime?: number
+  maxCookTime?: number
+  ingredients: string[]
+  ingredientMode: IngredientMatchMode
+}
+const NO_EXTRA_FILTERS: RecipeExtraFilters = { ingredients: [], ingredientMode: 'any' }
+const TIME_LIMIT_PRESETS = [15, 30, 45, 60]
+
+/** "Any / 15 min / 30 min..." chips that set a maximum time in minutes. */
+function TimeLimitChips({ label, value, onChange }: { label: string; value?: number; onChange: (value?: number) => void }) {
+  return (
+    <div className="chip-list" role="radiogroup" aria-label={label}>
+      <button type="button" role="radio" aria-checked={value === undefined} className={value === undefined ? 'chip active' : 'chip'} onClick={() => onChange(undefined)}>Any</button>
+      {TIME_LIMIT_PRESETS.map((minutes) => (
+        <button key={minutes} type="button" role="radio" aria-checked={value === minutes} className={value === minutes ? 'chip active' : 'chip'} onClick={() => onChange(minutes)}>
+          {minutes === 60 ? 'Up to 1 h' : `Up to ${minutes} min`}
+        </button>
+      ))}
+    </div>
+  )
+}
 
 function useModalEscapeToClose(onClose: () => void): void {
   useEffect(() => {
@@ -118,6 +145,64 @@ function ExternalLink({ href, children, className }: { href: string; children: R
   )
 }
 
+/** Free-text list of ingredients, shown as removable chips. */
+function IngredientChipsInput({ id, label, values, onChange, placeholder = 'Chicken, rice, garlic...' }: {
+  id: string
+  label: string
+  values: string[]
+  onChange: (values: string[]) => void
+  placeholder?: string
+}) {
+  const [draft, setDraft] = useState('')
+  const add = () => {
+    // Accept a comma-separated list as well as one ingredient at a time.
+    const additions = draft.split(',').map((value) => value.trim()).filter(Boolean)
+    if (additions.length === 0) return
+    const known = new Set(values.map((value) => value.toLowerCase()))
+    const next = [...values]
+    for (const value of additions) {
+      if (known.has(value.toLowerCase())) continue
+      known.add(value.toLowerCase())
+      next.push(value)
+    }
+    onChange(next)
+    setDraft('')
+  }
+  return (
+    <div className="ingredient-chips-input">
+      <div className="roulette-ingredient-input">
+        <label className="sr-only" htmlFor={id}>{label}</label>
+        <input id={id} type="text" value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); add() } }} placeholder={placeholder} enterKeyHint="done" />
+        <button type="button" className="btn-secondary btn-sm" onClick={add}>Add</button>
+      </div>
+      {values.length > 0 ? (
+        <div className="chip-list">
+          {values.map((value) => (
+            <button key={value} type="button" className="chip active" onClick={() => onChange(values.filter((item) => item !== value))} aria-label={`Remove ${value}`}>{value} <X size={12} /></button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function MatchModeToggle({ mode, onChange }: { mode: IngredientMatchMode; onChange: (mode: IngredientMatchMode) => void }) {
+  return (
+    <div className="segmented" role="radiogroup" aria-label="Ingredient matching">
+      <button type="button" role="radio" aria-checked={mode === 'any'} className={mode === 'any' ? 'segmented-btn active' : 'segmented-btn'} onClick={() => onChange('any')}>Match ANY</button>
+      <button type="button" role="radio" aria-checked={mode === 'all'} className={mode === 'all' ? 'segmented-btn active' : 'segmented-btn'} onClick={() => onChange('all')}>Match ALL</button>
+    </div>
+  )
+}
+
+/** "Perfect match" or "Missing 2 ingredients" for an ingredient search result. */
+function MatchBadge({ result }: { result: IngredientFinderResult }) {
+  const count = result.missing.length
+  return count === 0
+    ? <span className="match-badge perfect">Perfect match</span>
+    : <span className="match-badge">Missing {count} ingredient{count === 1 ? '' : 's'}</span>
+}
+
 const normalizeInstructionSteps = (recipe: MealieRecipeDetail): MealieInstructionStep[] => {
   if (Array.isArray((recipe as MealieRecipeDetail & { steps?: MealieInstructionStep[] }).steps)) {
     return (recipe as MealieRecipeDetail & { steps?: MealieInstructionStep[] }).steps ?? []
@@ -150,6 +235,9 @@ function AppHeader({ activeProfile }: { activeProfile: MealieProfile | null }) {
             </Link>
             <Link className={isActive('/roulette') ? 'header-nav-link active' : 'header-nav-link'} to="/roulette">
               <Dice5 /><span>Roulette</span>
+            </Link>
+            <Link className={isActive('/ingredients') ? 'header-nav-link active' : 'header-nav-link'} to="/ingredients">
+              <Refrigerator /><span>Finder</span>
             </Link>
             <Link className={isActive('/meal-plan') ? 'header-nav-link active' : 'header-nav-link'} to="/meal-plan">
               <Calendar /><span>Meal Plan</span>
@@ -272,6 +360,8 @@ function App() {
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategories, setSelectedCategories] = useState<string[]>([])
   const [selectedTags, setSelectedTags] = useState<string[]>([])
+  const [extraFilters, setExtraFilters] = useState<RecipeExtraFilters>(NO_EXTRA_FILTERS)
+  const [ingredientMatches, setIngredientMatches] = useState<Map<string, IngredientFinderResult>>(() => new Map())
   const [loading, setLoading] = useState(false)
   const [loadingMoreRecipes, setLoadingMoreRecipes] = useState(false)
   const [hasMoreRecipes, setHasMoreRecipes] = useState(false)
@@ -361,23 +451,37 @@ function App() {
       setCategories([])
       setTags([])
       setHasMoreRecipes(false)
+      setLoading(false)
       return
     }
     const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
+    let cancelled = false
+    const { maxPrepTime, maxCookTime, ingredients, ingredientMode } = extraFilters
+    const filters = { search: searchTerm, categories: selectedCategories, tags: selectedTags, maxPrepTime, maxCookTime }
+    // Time and ingredient filters are applied on this device, so they need the
+    // whole matching collection rather than one page at a time.
+    const loadRecipes = async (): Promise<{ recipes: MealieRecipeSummary[]; paged: boolean; matches: Map<string, IngredientFinderResult> }> => {
+      if (ingredients.length > 0) {
+        const results = await findRecipesByIngredients(client, ingredients, { mode: ingredientMode, filters })
+        return { recipes: results.map((result) => result.recipe), paged: false, matches: new Map(results.map((result) => [result.recipe.id, result])) }
+      }
+      if (maxPrepTime !== undefined || maxCookTime !== undefined) {
+        return { recipes: await client.getAllRecipes(filters), paged: false, matches: new Map() }
+      }
+      return { recipes: await client.getRecipes({ ...filters, page: 1, perPage: RECIPES_PAGE_SIZE }), paged: true, matches: new Map() }
+    }
     const timeout = window.setTimeout(async () => {
       setLoading(true)
       setError('')
       try {
-        const results = await Promise.allSettled([
-          client.getRecipes({ search: searchTerm, categories: selectedCategories, tags: selectedTags, page: 1, perPage: RECIPES_PAGE_SIZE }),
-          client.getCategories(),
-          client.getTags(),
-        ])
-        const nextRecipes = results[0]?.status === 'fulfilled' ? results[0].value : []
+        const results = await Promise.allSettled([loadRecipes(), client.getCategories(), client.getTags()])
+        if (cancelled) return
+        const loaded = results[0]?.status === 'fulfilled' ? results[0].value : { recipes: [], paged: false, matches: new Map<string, IngredientFinderResult>() }
         const nextCategories = results[1]?.status === 'fulfilled' ? results[1].value : []
         const nextTags = results[2]?.status === 'fulfilled' ? results[2].value : []
-        setRecipes(nextRecipes)
-        setHasMoreRecipes(nextRecipes.length === RECIPES_PAGE_SIZE)
+        setRecipes(loaded.recipes)
+        setIngredientMatches(loaded.matches)
+        setHasMoreRecipes(loaded.paged && loaded.recipes.length === RECIPES_PAGE_SIZE)
         setCategories(nextCategories)
         setTags(nextTags)
         if (results[0]?.status === 'rejected') {
@@ -385,14 +489,15 @@ function App() {
           setError(message)
         }
       } catch (err) {
+        if (cancelled) return
         const message = err instanceof Error ? err.message : 'Unable to load Mealie data.'
         setError(message)
       } finally {
-        setLoading(false)
+        if (!cancelled) setLoading(false)
       }
     }, 250)
-    return () => window.clearTimeout(timeout)
-  }, [activeProfile, searchTerm, selectedCategories, selectedTags])
+    return () => { cancelled = true; window.clearTimeout(timeout) }
+  }, [activeProfile, searchTerm, selectedCategories, selectedTags, extraFilters])
 
   // The home page shows the newest recipes, independent of whatever search or
   // filters are active on the Recipes page.
@@ -468,6 +573,7 @@ function App() {
             searchTerm={searchTerm} setSearchTerm={setSearchTerm}
             selectedCategories={selectedCategories} setSelectedCategories={setSelectedCategories}
             selectedTags={selectedTags} setSelectedTags={setSelectedTags}
+            extraFilters={extraFilters} setExtraFilters={setExtraFilters} ingredientMatches={ingredientMatches}
             loading={loading} loadingMore={loadingMoreRecipes} hasMore={hasMoreRecipes}
             onLoadMore={loadMoreRecipes} error={error}
           />
@@ -477,6 +583,7 @@ function App() {
         <Route path="/shopping" element={<ShoppingListsPage activeProfile={activeProfile} />} />
         <Route path="/shopping/:id" element={<ShoppingListDetailPage activeProfile={activeProfile} />} />
         <Route path="/meal-plan" element={<MealPlanPage activeProfile={activeProfile} />} />
+        <Route path="/ingredients" element={<IngredientFinderPage activeProfile={activeProfile} />} />
         <Route path="/random-recipe" element={<RouletteRedirect />} />
         <Route path="/roulette" element={<DinnerRoulettePage activeProfile={activeProfile} />} />
       </Routes>
@@ -696,6 +803,12 @@ function HomePage({ activeProfile, recipes, loading, error }: {
                   <div className="home-tool-card-label">Discover</div>
                   <div className="home-tool-card-title">Dinner Roulette</div>
                   <div className="home-tool-card-desc">Let chance pick tonight's recipe.</div>
+                </Link>
+                <Link className="home-tool-card" to="/ingredients">
+                  <div className="home-tool-card-icon"><Refrigerator /></div>
+                  <div className="home-tool-card-label">Use it up</div>
+                  <div className="home-tool-card-title">Ingredient Finder</div>
+                  <div className="home-tool-card-desc">Find recipes that use what you already have.</div>
                 </Link>
               </div>
             </section>
@@ -1041,6 +1154,151 @@ function ImportRecipePage({ activeProfile }: { activeProfile: MealieProfile | nu
   )
 }
 
+const FINDER_STORAGE_KEY = 'mealie-connect-ingredient-finder'
+const FINDER_RESULTS_SHOWN = 60
+
+interface StoredFinderState { have?: string[]; mode?: IngredientMatchMode; ignoreStaples?: boolean }
+
+function readFinderState(): StoredFinderState {
+  try { return JSON.parse(window.localStorage.getItem(FINDER_STORAGE_KEY) ?? '{}') as StoredFinderState }
+  catch { return {} }
+}
+
+/** Lists up to `limit` items, then "and N more". */
+function summarizeList(items: string[], limit = 4): string {
+  if (items.length <= limit) return items.join(', ')
+  return `${items.slice(0, limit).join(', ')} and ${items.length - limit} more`
+}
+
+function IngredientFinderPage({ activeProfile }: { activeProfile: MealieProfile | null }) {
+  const [have, setHave] = useState<string[]>(() => readFinderState().have ?? [])
+  const [mode, setMode] = useState<IngredientMatchMode>(() => readFinderState().mode ?? 'any')
+  const [ignoreStaples, setIgnoreStaples] = useState(() => readFinderState().ignoreStaples ?? true)
+  const [results, setResults] = useState<IngredientFinderResult[] | null>(null)
+  const [searching, setSearching] = useState(false)
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
+  const [error, setError] = useState('')
+  const searchRun = useRef<{ cancelled: boolean } | null>(null)
+
+  useEffect(() => {
+    try { window.localStorage.setItem(FINDER_STORAGE_KEY, JSON.stringify({ have, mode, ignoreStaples })) }
+    catch { /* Remembering the list is a convenience only. */ }
+  }, [have, mode, ignoreStaples])
+
+  useEffect(() => () => { if (searchRun.current) searchRun.current.cancelled = true }, [])
+
+  const updateSearch = (update: () => void) => { update(); setResults(null) }
+
+  const find = async () => {
+    if (!activeProfile || have.length === 0) return
+    if (searchRun.current) searchRun.current.cancelled = true
+    const run = { cancelled: false }
+    searchRun.current = run
+    setSearching(true)
+    setError('')
+    setProgress(null)
+    try {
+      const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
+      const found = await findRecipesByIngredients(client, have, {
+        mode,
+        ignoreStaples,
+        signal: run,
+        onProgress: (done, total) => { if (!run.cancelled) setProgress({ done, total }) },
+      })
+      if (!run.cancelled) setResults(found)
+    } catch (err) {
+      if (!run.cancelled) setError(err instanceof Error ? err.message : 'Could not search your recipes.')
+    } finally {
+      if (!run.cancelled) { setSearching(false); setProgress(null) }
+    }
+  }
+
+  return (
+    <div className="app-page">
+      <AppHeader activeProfile={activeProfile} />
+      <main className="page-content">
+        {!activeProfile ? (
+          <div className="empty-state">
+            <div className="empty-state-icon"><Refrigerator /></div>
+            <p className="empty-state-title">Ingredient Finder</p>
+            <p className="empty-state-text">No active Mealie account is connected.</p>
+            <Link className="btn-primary" to="/setup">Connect to Mealie</Link>
+          </div>
+        ) : (
+          <>
+            <div className="page-intro">
+              <p className="eyebrow">Ingredient Finder</p>
+              <h1 className="page-intro-title">Cook with what you already have.</h1>
+              <p className="page-intro-text">List what's in your fridge, pantry, or freezer and find recipes that use it.</p>
+            </div>
+
+            <section className="finder-panel">
+              <div className="filter-group">
+                <h4>What do you have?</h4>
+                <IngredientChipsInput id="finder-ingredient" label="Add an ingredient you have" values={have} onChange={(next) => updateSearch(() => setHave(next))} />
+              </div>
+              <div className="finder-options">
+                <MatchModeToggle mode={mode} onChange={(next) => updateSearch(() => setMode(next))} />
+                <label className="finder-checkbox">
+                  <input type="checkbox" checked={ignoreStaples} onChange={(event) => updateSearch(() => setIgnoreStaples(event.target.checked))} />
+                  <span>Assume I have salt, pepper, oil, and water</span>
+                </label>
+              </div>
+              <p className="finder-hint">
+                {mode === 'any' ? 'Shows recipes that use at least one of your ingredients.' : 'Shows only recipes that use every ingredient you listed.'}
+              </p>
+              <div className="finder-actions">
+                <button type="button" className="btn-primary" onClick={() => void find()} disabled={searching || have.length === 0}>
+                  <Search /> {searching ? 'Finding recipes...' : 'Find Recipes'}
+                </button>
+                {have.length > 0 && !searching ? <button type="button" className="btn-ghost btn-sm" onClick={() => updateSearch(() => setHave([]))}>Clear list</button> : null}
+              </div>
+              {searching && progress && progress.total > 0 ? (
+                <p className="finder-progress" aria-live="polite">Checking {progress.done} of {progress.total} recipes...</p>
+              ) : null}
+            </section>
+
+            <ErrorMessage message={error} activeProfile={activeProfile} />
+
+            {results && !searching ? (
+              results.length === 0 ? (
+                <div className="empty-state">
+                  <div className="empty-state-icon"><Refrigerator /></div>
+                  <p className="empty-state-title">No recipes match</p>
+                  <p className="empty-state-text">{mode === 'all' && have.length > 1 ? 'Try Match ANY, or remove an ingredient.' : 'Try a different ingredient name.'}</p>
+                </div>
+              ) : (
+                <section className="finder-results" aria-label="Matching recipes">
+                  <p className="result-count">{results.length} recipe{results.length === 1 ? '' : 's'}{results.length > FINDER_RESULTS_SHOWN ? `, showing the best ${FINDER_RESULTS_SHOWN}` : ''}</p>
+                  <ul className="finder-result-list">
+                    {results.slice(0, FINDER_RESULTS_SHOWN).map((result) => (
+                      <li key={result.recipe.id}>
+                        <Link className="finder-result" to={`/recipes/${result.recipe.slug || result.recipe.id}`}>
+                          <div className="finder-result-image">
+                            <RecipeThumbnail activeProfile={activeProfile} recipe={result.recipe} />
+                          </div>
+                          <div className="finder-result-body">
+                            <div className="finder-result-heading">
+                              <h3 className="finder-result-title">{result.recipe.name}</h3>
+                              <MatchBadge result={result} />
+                            </div>
+                            <p className="finder-result-detail">Uses your {summarizeList(result.matched)}</p>
+                            {result.missing.length > 0 ? <p className="finder-result-detail muted">You'd also need {summarizeList(result.missing)}</p> : null}
+                          </div>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )
+            ) : null}
+          </>
+        )}
+      </main>
+    </div>
+  )
+}
+
 function RecipeThumbnail({ activeProfile, recipe, className = 'recipe-thumbnail', size = 'min-original' }: {
   activeProfile: MealieProfile
   recipe: MealieRecipeSummary
@@ -1107,7 +1365,7 @@ function RecipeThumbnail({ activeProfile, recipe, className = 'recipe-thumbnail'
   )
 }
 
-function RecipesPage({ activeProfile, recipes, categories, tags, searchTerm, setSearchTerm, selectedCategories, setSelectedCategories, selectedTags, setSelectedTags, loading, loadingMore, hasMore, onLoadMore, error }: {
+function RecipesPage({ activeProfile, recipes, categories, tags, searchTerm, setSearchTerm, selectedCategories, setSelectedCategories, selectedTags, setSelectedTags, extraFilters, setExtraFilters, ingredientMatches, loading, loadingMore, hasMore, onLoadMore, error }: {
   activeProfile: MealieProfile | null
   recipes: MealieRecipeSummary[]
   categories: MealieCategory[]
@@ -1118,6 +1376,9 @@ function RecipesPage({ activeProfile, recipes, categories, tags, searchTerm, set
   setSelectedCategories: (value: string[]) => void
   selectedTags: string[]
   setSelectedTags: (value: string[]) => void
+  extraFilters: RecipeExtraFilters
+  setExtraFilters: (value: RecipeExtraFilters) => void
+  ingredientMatches: Map<string, IngredientFinderResult>
   loading: boolean
   loadingMore: boolean
   hasMore: boolean
@@ -1148,7 +1409,9 @@ function RecipesPage({ activeProfile, recipes, categories, tags, searchTerm, set
   }
 
   const activeFilterCount = selectedCategories.length + selectedTags.length
-  const clearFilters = () => { setSelectedCategories([]); setSelectedTags([]) }
+    + (extraFilters.maxPrepTime !== undefined ? 1 : 0) + (extraFilters.maxCookTime !== undefined ? 1 : 0) + extraFilters.ingredients.length
+  const clearFilters = () => { setSelectedCategories([]); setSelectedTags([]); setExtraFilters(NO_EXTRA_FILTERS) }
+  const updateExtraFilters = (update: Partial<RecipeExtraFilters>) => setExtraFilters({ ...extraFilters, ...update })
 
   return (
     <div className="app-page">
@@ -1215,9 +1478,26 @@ function RecipesPage({ activeProfile, recipes, categories, tags, searchTerm, set
                   ))}
                 </div>
               </div>
+
+              <div className="filter-group">
+                <h4>Prep time</h4>
+                <TimeLimitChips label="Maximum prep time" value={extraFilters.maxPrepTime} onChange={(maxPrepTime) => updateExtraFilters({ maxPrepTime })} />
+              </div>
+
+              <div className="filter-group">
+                <h4>Cook time</h4>
+                <TimeLimitChips label="Maximum cook time" value={extraFilters.maxCookTime} onChange={(maxCookTime) => updateExtraFilters({ maxCookTime })} />
+              </div>
+
+              <div className="filter-group">
+                <h4>Ingredients</h4>
+                <IngredientChipsInput id="recipe-ingredient-filter" label="Filter by an ingredient" values={extraFilters.ingredients} onChange={(ingredients) => updateExtraFilters({ ingredients })} />
+                {extraFilters.ingredients.length > 1 ? <MatchModeToggle mode={extraFilters.ingredientMode} onChange={(ingredientMode) => updateExtraFilters({ ingredientMode })} /> : null}
+                <Link className="filter-link" to="/ingredients">Find recipes for everything in your fridge <ChevronRight /></Link>
+              </div>
             </div>
 
-            {loading ? <p style={{padding: 'var(--sp-4) 0', color: 'var(--text-muted)'}}>Loading recipes...</p> : null}
+            {loading ? <p style={{padding: 'var(--sp-4) 0', color: 'var(--text-muted)'}}>{extraFilters.ingredients.length > 0 ? 'Checking recipe ingredients...' : 'Loading recipes...'}</p> : null}
             <ErrorMessage message={error} activeProfile={activeProfile} />
 
             <div className="recipe-grid">
@@ -1230,7 +1510,10 @@ function RecipesPage({ activeProfile, recipes, categories, tags, searchTerm, set
                     <div className="recipe-card-body">
                       <p className="recipe-card-kicker">{recipe.categories?.[0]?.name ?? 'Recipe'}</p>
                       <h3 className="recipe-card-title">{recipe.name}</h3>
-                      {recipe.description ? <p className="recipe-card-meta">{recipe.description}</p> : null}
+                      {ingredientMatches.has(recipe.id) ? <MatchBadge result={ingredientMatches.get(recipe.id) as IngredientFinderResult} /> : null}
+                      {(extraFilters.maxPrepTime !== undefined || extraFilters.maxCookTime !== undefined) && (recipe.prepTime || recipe.cookTime) ? (
+                        <p className="recipe-card-meta">{[recipe.prepTime ? `${formatMealieTime(recipe.prepTime)} prep` : '', recipe.cookTime ? `${formatMealieTime(recipe.cookTime)} cook` : ''].filter(Boolean).join(' · ')}</p>
+                      ) : recipe.description ? <p className="recipe-card-meta">{recipe.description}</p> : null}
                     </div>
                   </Link>
                 </article>
@@ -2292,35 +2575,6 @@ interface RouletteResultRecipe extends MealieRecipeSummary {
   __detail?: MealieRecipeDetail
 }
 
-const ROULETTE_DETAIL_CONCURRENCY = 6
-
-/** Like Promise.allSettled over items.map(task), but runs at most `limit`
- * tasks at once so large libraries don't flood the Mealie server. */
-async function settleWithConcurrency<T, R>(items: T[], limit: number, task: (item: T) => Promise<R>): Promise<PromiseSettledResult<R>[]> {
-  const results: PromiseSettledResult<R>[] = new Array(items.length)
-  let next = 0
-  const worker = async () => {
-    while (next < items.length) {
-      const index = next
-      next += 1
-      try {
-        results[index] = { status: 'fulfilled', value: await task(items[index] as T) }
-      } catch (reason) {
-        results[index] = { status: 'rejected', reason }
-      }
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker))
-  return results
-}
-
-function matchesIngredients(detail: MealieRecipeDetail, ingredients: string[], mode: 'any' | 'all'): boolean {
-  if (ingredients.length === 0) return true
-  const recipeIngredientText = (detail.ingredients ?? []).map((ingredient) => `${ingredient.food ?? ""} ${ingredient.note ?? ""}`.toLowerCase()).join(" | ")
-  const haystackHas = (needle: string) => recipeIngredientText.includes(needle.toLowerCase().trim())
-  return mode === 'all' ? ingredients.every((needle) => haystackHas(needle)) : ingredients.some((needle) => haystackHas(needle))
-}
-
 function DinnerRoulettePage({ activeProfile }: { activeProfile: MealieProfile | null }) {
   const [categories, setCategories] = useState<MealieCategory[]>([])
   const [tags, setTags] = useState<MealieTag[]>([])
@@ -2330,7 +2584,6 @@ function DinnerRoulettePage({ activeProfile }: { activeProfile: MealieProfile | 
   const [maxCookTime, setMaxCookTime] = useState<number | undefined>(undefined)
   const [customPrep, setCustomPrep] = useState('')
   const [customCook, setCustomCook] = useState('')
-  const [ingredientInput, setIngredientInput] = useState('')
   const [ingredients, setIngredients] = useState<string[]>([])
   const [ingredientMode, setIngredientMode] = useState<'any' | 'all'>('any')
   const [rolling, setRolling] = useState(false)
@@ -2351,13 +2604,6 @@ function DinnerRoulettePage({ activeProfile }: { activeProfile: MealieProfile | 
   }, [activeProfile])
 
   const toggleTag = (id: string) => { setTagIds((current) => (current.includes(id) ? current.filter((value) => value !== id) : [...current, id])) }
-  const addIngredient = () => {
-    const value = ingredientInput.trim()
-    if (!value) return
-    setIngredients((current) => (current.includes(value) ? current : [...current, value]))
-    setIngredientInput('')
-  }
-  const removeIngredient = (value: string) => { setIngredients((current) => current.filter((item) => item !== value)) }
   const clearCategory = () => setCategoryId('')
   const clearTags = () => setTagIds([])
   const clearTimeFilters = () => { setMaxPrepTime(undefined); setMaxCookTime(undefined); setCustomPrep(''); setCustomCook('') }
@@ -2373,16 +2619,10 @@ function DinnerRoulettePage({ activeProfile }: { activeProfile: MealieProfile | 
     setSearchedNoResults(false)
     try {
       const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
-      const candidates = await client.getAllRecipes({ categories: categoryId ? [categoryId] : undefined, tags: tagIds.length > 0 ? tagIds : undefined, maxPrepTime, maxCookTime })
-      let pool: RouletteResultRecipe[] = candidates
-      if (ingredients.length > 0) {
-        const details = await settleWithConcurrency(candidates, ROULETTE_DETAIL_CONCURRENCY, (recipe) => client.getRecipe(recipe.slug || recipe.id))
-        pool = candidates.filter((_recipe, index) => {
-          const detailResult = details[index]
-          if (detailResult.status !== 'fulfilled') return false
-          return matchesIngredients(detailResult.value, ingredients, ingredientMode)
-        })
-      }
+      const filters = { categories: categoryId ? [categoryId] : undefined, tags: tagIds.length > 0 ? tagIds : undefined, maxPrepTime, maxCookTime }
+      const pool: RouletteResultRecipe[] = ingredients.length > 0
+        ? (await findRecipesByIngredients(client, ingredients, { mode: ingredientMode, filters })).map((match) => match.recipe)
+        : await client.getAllRecipes(filters)
       if (pool.length === 0) { setResult(null); setSearchedNoResults(true); return }
       const notRecentlyShown = pool.filter((recipe) => !recentResultIds.current.includes(recipe.id))
       const choicePool = notRecentlyShown.length > 0 ? notRecentlyShown : pool
@@ -2462,23 +2702,8 @@ function DinnerRoulettePage({ activeProfile }: { activeProfile: MealieProfile | 
 
               <div className="roulette-filter-group">
                 <h4>Ingredients on hand</h4>
-                <div className="roulette-ingredient-input">
-                  <input type="text" value={ingredientInput} onChange={(event) => setIngredientInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); addIngredient() } }} placeholder="Chicken, rice, garlic..." aria-label="Add an ingredient you have on hand" />
-                  <button type="button" className="btn-secondary btn-sm" onClick={addIngredient}>Add</button>
-                </div>
-                {ingredients.length > 0 ? (
-                  <div className="chip-list" style={{marginTop:'var(--sp-2)'}}>
-                    {ingredients.map((ingredient) => (
-                      <button key={ingredient} type="button" className="chip active" onClick={() => removeIngredient(ingredient)} aria-label={`Remove ${ingredient}`}>{ingredient} <X size={12} /></button>
-                    ))}
-                  </div>
-                ) : null}
-                {ingredients.length > 0 ? (
-                  <div className="roulette-ingredient-mode" role="radiogroup" aria-label="Ingredient matching mode">
-                    <button type="button" className={ingredientMode === 'any' ? 'chip active' : 'chip'} onClick={() => setIngredientMode('any')} aria-pressed={ingredientMode === 'any'}>Match ANY</button>
-                    <button type="button" className={ingredientMode === 'all' ? 'chip active' : 'chip'} onClick={() => setIngredientMode('all')} aria-pressed={ingredientMode === 'all'}>Match ALL</button>
-                  </div>
-                ) : null}
+                <IngredientChipsInput id="roulette-ingredient" label="Add an ingredient you have on hand" values={ingredients} onChange={setIngredients} />
+                {ingredients.length > 1 ? <div className="roulette-ingredient-mode"><MatchModeToggle mode={ingredientMode} onChange={setIngredientMode} /></div> : null}
               </div>
 
               {hasAnyFilter ? <button type="button" className="btn-ghost btn-sm" onClick={clearAllFilters}>Clear all filters</button> : null}

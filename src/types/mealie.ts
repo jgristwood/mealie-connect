@@ -22,6 +22,11 @@ export interface MealieTag {
   slug?: string
 }
 
+export interface MealieFood {
+  id: string
+  name: string
+}
+
 export interface MealieIngredient {
   id?: string
   food?: string

@@ -1,5 +1,6 @@
 import type {
   MealieCategory,
+  MealieFood,
   MealieRecipeDetail,
   MealieRecipeSummary,
   MealieShoppingList,
@@ -18,6 +19,8 @@ export interface RecipeQueryFilters {
   search?: string
   categories?: string[]
   tags?: string[]
+  /** Mealie food IDs; matches recipes that use any of them. */
+  foods?: string[]
   /** Maximum prep time, in minutes. Applied client-side since Mealie's list
    * endpoint does not expose a time-range filter across versions. */
   maxPrepTime?: number
@@ -34,13 +37,21 @@ export type RecipeImageSize = 'original' | 'min-original' | 'tiny-original'
 
 type MealieShoppingListResponse = MealieShoppingList & { listItems?: MealieShoppingList['items'] }
 
-/** Parses a Mealie time value (which may be a number of minutes, an ISO 8601
- * duration such as "PT20M", or a free-form string) into whole minutes. */
+const TIME_UNIT_MINUTES: Array<[RegExp, number]> = [
+  [/^d(ays?)?$/i, 24 * 60],
+  [/^h(rs?|ours?)?$/i, 60],
+  [/^m(ins?|inutes?)?$/i, 1],
+]
+
+/** Parses a Mealie time value into whole minutes. Mealie stores prep and cook
+ * times as free text, so this accepts a number of minutes, an ISO 8601
+ * duration such as "PT20M", or text like "1 hour 30 minutes" or "1h 15m". */
 export function parseMealieTimeToMinutes(value: number | string | undefined): number | undefined {
   if (value === undefined || value === null || value === '') return undefined
-  if (typeof value === 'number') return value
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined
+  const text = value.trim()
 
-  const isoMatch = /^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?$/i.exec(value.trim())
+  const isoMatch = /^P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?$/i.exec(text)
   if (isoMatch) {
     const days = Number(isoMatch[1] ?? 0)
     const hours = Number(isoMatch[2] ?? 0)
@@ -48,8 +59,26 @@ export function parseMealieTimeToMinutes(value: number | string | undefined): nu
     return days * 24 * 60 + hours * 60 + minutes
   }
 
-  const numeric = Number.parseInt(value, 10)
+  let total = 0
+  let matchedUnit = false
+  for (const match of text.matchAll(/(\d+(?:[.,]\d+)?)\s*([a-z]+)/gi)) {
+    const amount = Number.parseFloat((match[1] ?? '').replace(',', '.'))
+    const unit = TIME_UNIT_MINUTES.find(([pattern]) => pattern.test(match[2] ?? ''))
+    if (!unit || !Number.isFinite(amount)) continue
+    total += amount * unit[1]
+    matchedUnit = true
+  }
+  if (matchedUnit) return Math.round(total)
+
+  const numeric = /^\d+$/.test(text) ? Number.parseInt(text, 10) : Number.NaN
   return Number.isNaN(numeric) ? undefined : numeric
+}
+
+/** True when a recipe's time is known and at most `maxMinutes`. */
+export function isWithinTime(value: number | string | undefined, maxMinutes: number | undefined): boolean {
+  if (maxMinutes === undefined) return true
+  const minutes = parseMealieTimeToMinutes(value)
+  return minutes !== undefined && minutes <= maxMinutes
 }
 
 /** Formats a Mealie time value for display. Numeric and ISO 8601 values are
@@ -324,6 +353,7 @@ export class MealieClient {
       search: filters.search,
       categories: filters.categories,
       tags: filters.tags,
+      foods: filters.foods,
       page: filters.page ?? 1,
       perPage: filters.perPage ?? 50,
       orderBy: filters.orderBy,
@@ -360,23 +390,10 @@ export class MealieClient {
     recipes: MealieRecipeSummary[],
     filters: RecipeQueryFilters,
   ): MealieRecipeSummary[] {
-    let result = recipes
-
-    if (filters.maxPrepTime !== undefined) {
-      result = result.filter((recipe) => {
-        const minutes = parseMealieTimeToMinutes(recipe.prepTime)
-        return minutes === undefined || minutes <= filters.maxPrepTime!
-      })
-    }
-
-    if (filters.maxCookTime !== undefined) {
-      result = result.filter((recipe) => {
-        const minutes = parseMealieTimeToMinutes(recipe.cookTime)
-        return minutes === undefined || minutes <= filters.maxCookTime!
-      })
-    }
-
-    return result
+    // A recipe with no time recorded can't be shown to fit under a limit, so
+    // it is left out once a limit is set.
+    return recipes.filter((recipe) =>
+      isWithinTime(recipe.prepTime, filters.maxPrepTime) && isWithinTime(recipe.cookTime, filters.maxCookTime))
   }
 
   /**
@@ -607,6 +624,22 @@ export class MealieClient {
     }
     
     return data.items ?? []
+  }
+
+  /** Searches Mealie's food database (the parsed ingredient names). */
+  async getFoods(search: string): Promise<MealieFood[]> {
+    const query = this.buildQueryString({ search, page: 1, perPage: 100 })
+    const response = await fetch(`${this.baseUrl}/api/foods${query}`, {
+      method: 'GET',
+      headers: this.headers(),
+    })
+
+    if (!response.ok) {
+      throw new Error('Failed to load foods from Mealie.')
+    }
+
+    const data = await this.safeJsonParse<MealieFood[] | { items: MealieFood[] }>(response, 'Failed to parse foods')
+    return Array.isArray(data) ? data : data.items ?? []
   }
 
   async getShoppingLists(): Promise<MealieShoppingList[]> {

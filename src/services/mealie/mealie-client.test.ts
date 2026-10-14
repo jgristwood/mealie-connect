@@ -239,6 +239,13 @@ describe('parseMealieTimeToMinutes', () => {
     expect(parseMealieTimeToMinutes(15)).toBe(15)
   })
 
+  it('parses the free-text times Mealie stores', () => {
+    expect(parseMealieTimeToMinutes('1 hour 30 minutes')).toBe(90)
+    expect(parseMealieTimeToMinutes('45 mins')).toBe(45)
+    expect(parseMealieTimeToMinutes('1h 15m')).toBe(75)
+    expect(parseMealieTimeToMinutes('1.5 hours')).toBe(90)
+  })
+
   it('returns undefined for empty/invalid values', () => {
     expect(parseMealieTimeToMinutes(undefined)).toBeUndefined()
     expect(parseMealieTimeToMinutes('')).toBeUndefined()
