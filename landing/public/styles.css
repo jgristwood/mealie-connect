@@ -244,6 +244,13 @@ h2.center {
 
 .heading-group .hero-actions { justify-content: flex-start; }
 
+/* The hero intro spans the title's width: it fills the group without
+   making the group any wider than the title. */
+.heading-group .hero-lead {
+  max-width: none;
+  contain: inline-size;
+}
+
 /* ---------------------------------------------------------
    BUTTONS & PILLS
    --------------------------------------------------------- */
