@@ -10,6 +10,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  CloudOff,
   Dice5,
   Download,
   Home,
@@ -18,6 +19,7 @@ import {
   Pencil,
   Plus,
   Refrigerator,
+  RefreshCw,
   Search,
   Settings,
   ShoppingCart,
@@ -32,6 +34,7 @@ import { StepTimerButtons, TimerTray } from './components/cook-timers'
 import { useCookTimers } from './lib/use-cook-timers'
 import { canScaleIngredient, formatQuantity, scaleIngredientText } from './lib/ingredients'
 import { findRecipesByIngredients, type IngredientFinderResult } from './lib/ingredient-finder'
+import { getSyncStatus, updateSyncStatus, useSyncStatus } from './lib/sync-status'
 import defaultRecipeImage from './assets/default-image.jpg'
 import type {
   AuthMethod,
@@ -54,6 +57,10 @@ import './App.css'
 const APP_VERSION = __APP_VERSION__
 const RECIPES_PAGE_SIZE = 50
 const HOME_RECIPE_COUNT = 7
+/** How often the offline copy is refreshed in the background. */
+const OFFLINE_REFRESH_INTERVAL_MS = 30 * 60 * 1000
+/** How often to retry reaching Mealie while offline or holding unsent changes. */
+const SYNC_RETRY_INTERVAL_MS = 30 * 1000
 const MEAL_TYPE_LABELS: Record<string, string> = {
   breakfast: 'Breakfast',
   lunch: 'Lunch',
@@ -112,15 +119,49 @@ function useModalEscapeToClose(onClose: () => void): void {
 }
 
 
+/** Shows a lapsed login. Being offline is shown by SyncStatusPill instead. */
 function NativeConnectionStatus({ state }: { state: ConnectivityState | null }) {
-  if (!state) return null
-  const config: Record<ConnectivityState, { label: string; className: string }> = {
-    online: { label: 'Online', className: 'native-connection-status online' },
-    offline: { label: 'Offline', className: 'native-connection-status offline' },
-    'server-unreachable': { label: 'Server unreachable', className: 'native-connection-status warning' },
-    'auth-failed': { label: 'Authentication required', className: 'native-connection-status warning' },
+  if (state !== 'auth-failed') return null
+  return <div className="native-connection-status warning">Authentication required</div>
+}
+
+function changesLabel(count: number): string {
+  return `${count} change${count === 1 ? '' : 's'}`
+}
+
+/** "Offline · 2 changes waiting to sync", "Syncing...", then "All changes synced". */
+function SyncStatusPill() {
+  const status = useSyncStatus()
+  const [showSynced, setShowSynced] = useState(false)
+  const previousPending = useRef(status.pending)
+
+  useEffect(() => {
+    const hadPending = previousPending.current > 0
+    previousPending.current = status.pending
+    if (!hadPending || status.pending > 0 || status.offline) return
+    setShowSynced(true)
+    const timer = window.setTimeout(() => setShowSynced(false), 3000)
+    return () => window.clearTimeout(timer)
+  }, [status.pending, status.offline])
+
+  let label = ''
+  let tone = 'pending'
+  if (status.offline) {
+    tone = 'offline'
+    label = status.pending > 0 ? `Offline · ${changesLabel(status.pending)} waiting to sync` : 'Offline · using saved data'
+  } else if (status.pending > 0) {
+    label = status.syncing ? `Syncing ${changesLabel(status.pending)}...` : `${changesLabel(status.pending)} waiting to sync`
+  } else if (showSynced) {
+    tone = 'synced'
+    label = 'All changes synced'
   }
-  return <div className={config[state].className}>{config[state].label}</div>
+  if (!label) return null
+  return (
+    <div className={`sync-status-pill ${tone}`} role="status" aria-live="polite">
+      {tone === 'offline' ? <CloudOff /> : tone === 'synced' ? <Check /> : <RefreshCw className={status.syncing ? 'spinning' : undefined} />}
+      <span>{label}</span>
+    </div>
+  )
 }
 
 function isAuthErrorMessage(message: string): boolean {
@@ -397,6 +438,65 @@ function App() {
 
   useEffect(() => { void loadProfiles() }, [loadProfiles])
 
+  const syncStatus = useSyncStatus()
+  const needsSyncCheck = syncStatus.offline || syncStatus.pending > 0
+
+  // Keep this account's offline copy fresh and send any changes made offline:
+  // on start, when the connection or the app comes back, and every so often.
+  useEffect(() => {
+    if (!activeProfile) { updateSyncStatus({ pending: 0, lastSyncedAt: undefined }); return }
+    const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
+    let disposed = false
+    const refreshIfStale = async () => {
+      const meta = await client.offline.getMeta()
+      if (disposed) return
+      updateSyncStatus({ lastSyncedAt: meta.lastSyncedAt })
+      const age = meta.lastSyncedAt ? Date.now() - Date.parse(meta.lastSyncedAt) : Number.POSITIVE_INFINITY
+      if (age > OFFLINE_REFRESH_INTERVAL_MS && !getSyncStatus().syncing) await client.syncForOffline().catch(() => undefined)
+    }
+    const reconnect = async () => {
+      await client.refreshPendingCount()
+      try {
+        await client.getHealth()
+      } catch {
+        return
+      }
+      await client.flushIfPending().catch(() => undefined)
+      await refreshIfStale()
+    }
+    void client.refreshPendingCount().then(() => reconnect())
+    const onVisible = () => { if (document.visibilityState === 'visible') void reconnect() }
+    const onOffline = () => updateSyncStatus({ offline: true })
+    const onOnline = () => { void reconnect() }
+    window.addEventListener('online', onOnline)
+    window.addEventListener('offline', onOffline)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      disposed = true
+      window.removeEventListener('online', onOnline)
+      window.removeEventListener('offline', onOffline)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [activeProfile])
+
+  // While offline or holding unsent changes, check back regularly: the
+  // server may return without the device's network status changing.
+  useEffect(() => {
+    if (!activeProfile || !needsSyncCheck) return
+    const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
+    const timer = window.setInterval(() => {
+      void client.getHealth().then(() => client.flushIfPending()).catch(() => undefined)
+    }, SYNC_RETRY_INTERVAL_MS)
+    return () => window.clearInterval(timer)
+  }, [activeProfile, needsSyncCheck])
+
+  useEffect(() => {
+    if (isNativePlatform() && networkConnected && activeProfile) {
+      const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
+      void client.getHealth().then(() => client.flushIfPending()).catch(() => undefined)
+    }
+  }, [activeProfile, networkConnected])
+
   useEffect(() => {
     if (!isNativePlatform()) return
     let statusListener: PluginListenerHandle | undefined
@@ -511,7 +611,7 @@ function App() {
       }
     }, 250)
     return () => { cancelled = true; window.clearTimeout(timeout) }
-  }, [activeProfile, searchTerm, selectedCategories, selectedTags, extraFilters])
+  }, [activeProfile, searchTerm, selectedCategories, selectedTags, extraFilters, syncStatus.revision])
 
   // The home page shows the newest recipes, independent of whatever search or
   // filters are active on the Recipes page.
@@ -526,7 +626,7 @@ function App() {
       .catch((err: unknown) => { if (!cancelled) setHomeError(err instanceof Error ? err.message : 'Unable to load recipes.') })
       .finally(() => { if (!cancelled) setHomeLoading(false) })
     return () => { cancelled = true }
-  }, [activeProfile])
+  }, [activeProfile, syncStatus.revision])
 
   const loadMoreRecipes = useCallback(async () => {
     if (!activeProfile || loading || loadingMoreRecipes || !hasMoreRecipes) return
@@ -568,6 +668,8 @@ function App() {
   }
 
   const removeProfile = async (profile: MealieProfile) => {
+    // Nothing of a removed account should stay on the device.
+    await new MealieClient({ baseUrl: profile.server, token: profile.token }).offline.clear().catch(() => undefined)
     await authService.removeProfile(profile.id)
     if (activeProfile?.id === profile.id) setActiveProfile(null)
     await loadProfiles()
@@ -603,6 +705,7 @@ function App() {
       </Routes>
       <MobileNav activeProfile={activeProfile} />
       <NativeConnectionStatus state={connectivityState} />
+      <SyncStatusPill />
     </BrowserRouter>
   )
 }
@@ -634,6 +737,7 @@ function HomePage({ activeProfile, recipes, loading, error }: {
 }) {
   const [todayEntries, setTodayEntries] = useState<MealieWeekPlan[]>([])
   const [todayLoaded, setTodayLoaded] = useState(false)
+  const syncRevision = useSyncStatus().revision
 
   useEffect(() => {
     if (!activeProfile) { setTodayEntries([]); setTodayLoaded(false); return }
@@ -645,7 +749,7 @@ function HomePage({ activeProfile, recipes, loading, error }: {
       .catch(() => { if (!cancelled) setTodayEntries([]) })
       .finally(() => { if (!cancelled) setTodayLoaded(true) })
     return () => { cancelled = true }
-  }, [activeProfile])
+  }, [activeProfile, syncRevision])
 
   const planned = useMemo(() => pickPlannedHero(todayEntries, new Date().getHours()), [todayEntries])
   const featured = planned?.recipe ?? recipes[0] ?? null
@@ -846,6 +950,110 @@ function HomePage({ activeProfile, recipes, loading, error }: {
   )
 }
 
+function formatTimeAgo(iso: string | undefined): string {
+  if (!iso) return 'never'
+  const minutes = Math.round((Date.now() - Date.parse(iso)) / 60000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes} min ago`
+  const hours = Math.round(minutes / 60)
+  if (hours < 24) return `${hours} h ago`
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+/** Offline status, sync controls, and the device copy of this account. */
+function OfflineSettings({ activeProfile }: { activeProfile: MealieProfile }) {
+  const status = useSyncStatus()
+  const [recipeCount, setRecipeCount] = useState<number | null>(null)
+  const [allRecipesSavedAt, setAllRecipesSavedAt] = useState<string | undefined>()
+  const [task, setTask] = useState<'sync' | 'download' | 'clear' | null>(null)
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
+  const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const client = useMemo(() => new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token }), [activeProfile])
+
+  useEffect(() => {
+    let cancelled = false
+    Promise.all([client.offline.getRecipeIndex(), client.offline.getMeta()]).then(([index, meta]) => {
+      if (cancelled) return
+      setRecipeCount(Object.keys(index).length)
+      setAllRecipesSavedAt(meta.allRecipesSavedAt)
+    }).catch(() => undefined)
+    return () => { cancelled = true }
+  }, [client, status.revision])
+
+  const run = async (kind: 'sync' | 'download') => {
+    setTask(kind)
+    setMessage('')
+    setError('')
+    setProgress(null)
+    try {
+      await client.syncForOffline({ allRecipes: kind === 'download', onProgress: (done, total) => setProgress({ done, total }) })
+      setMessage(kind === 'download' ? 'Every recipe is saved on this device.' : 'Synced with Mealie.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not sync with Mealie.')
+    } finally {
+      setTask(null)
+      setProgress(null)
+    }
+  }
+
+  const clear = async () => {
+    const warning = status.pending > 0
+      ? `Remove the recipes, plans, and lists saved on this device? ${changesLabel(status.pending)} not yet synced will be lost.`
+      : 'Remove the recipes, plans, and lists saved on this device? They will download again next time you are online.'
+    if (!window.confirm(warning)) return
+    setTask('clear')
+    setMessage('')
+    setError('')
+    try {
+      await client.offline.clear()
+      updateSyncStatus({ pending: 0, lastSyncedAt: undefined })
+      setRecipeCount(0)
+      setAllRecipesSavedAt(undefined)
+      setMessage('Offline data removed from this device.')
+    } finally {
+      setTask(null)
+    }
+  }
+
+  const busy = task !== null || status.syncing
+  return (
+    <section className="settings-section">
+      <h2 className="settings-section-title">Offline access</h2>
+      <div className="offline-summary">
+        <p className="offline-summary-state">
+          {status.offline ? <CloudOff /> : <Check />}
+          <span>{status.offline ? 'Offline: showing what is saved on this device' : 'Connected to Mealie'}</span>
+        </p>
+        <dl className="offline-summary-facts">
+          <div><dt>Last synced</dt><dd>{formatTimeAgo(status.lastSyncedAt)}</dd></div>
+          <div><dt>Recipes saved</dt><dd>{recipeCount ?? '...'}{allRecipesSavedAt ? ', all with ingredients and steps' : ''}</dd></div>
+          <div><dt>Waiting to sync</dt><dd>{status.pending === 0 ? 'Nothing' : changesLabel(status.pending)}</dd></div>
+        </dl>
+        <p className="offline-summary-note">
+          Recipes you open, your shopping lists, and your meal plan from last week to five weeks ahead are saved automatically.
+          Changes you make offline sync when Mealie is reachable again.
+        </p>
+      </div>
+      {status.failed > 0 ? (
+        <p className="error-message">{changesLabel(status.failed)} couldn't be synced because Mealie no longer accepts them (for example, the item was deleted elsewhere).</p>
+      ) : null}
+      {progress && progress.total > 0 ? <p className="finder-progress" aria-live="polite">Saving recipe {progress.done} of {progress.total}...</p> : null}
+      {message ? <p className="success-message">{message}</p> : null}
+      {error ? <ErrorMessage message={error} activeProfile={activeProfile} /> : null}
+      <div className="offline-actions">
+        <button type="button" className="btn-secondary btn-sm" onClick={() => void run('sync')} disabled={busy}>
+          <RefreshCw className={task === 'sync' ? 'spinning' : undefined} /> {task === 'sync' ? 'Syncing...' : 'Sync now'}
+        </button>
+        <button type="button" className="btn-secondary btn-sm" onClick={() => void run('download')} disabled={busy}>
+          <Download /> {task === 'download' ? 'Saving recipes...' : 'Save all recipes for offline'}
+        </button>
+        <button type="button" className="btn-ghost btn-sm" style={{color:'var(--danger)'}} onClick={() => void clear()} disabled={busy}>Remove offline data</button>
+      </div>
+    </section>
+  )
+}
+
 function SettingsPage({ activeProfile, profiles, onSelectProfile, onRemoveProfile, onSignOut, connectivityState }: {
   activeProfile: MealieProfile | null
   profiles: MealieProfile[]
@@ -916,6 +1124,8 @@ function SettingsPage({ activeProfile, profiles, onSelectProfile, onRemoveProfil
               <h2 className="settings-section-title">Appearance</h2>
               <ThemeMenu />
             </section>
+
+            <OfflineSettings activeProfile={activeProfile} />
 
             <section className="settings-section">
               <div className="settings-signout-actions">
@@ -2120,6 +2330,7 @@ function ShoppingListsPage({ activeProfile }: { activeProfile: MealieProfile | n
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [newListName, setNewListName] = useState('')
+  const syncRevision = useSyncStatus().revision
 
   useEffect(() => {
     if (!activeProfile) { setLists([]); return }
@@ -2127,7 +2338,7 @@ function ShoppingListsPage({ activeProfile }: { activeProfile: MealieProfile | n
     setLoading(true)
     setError('')
     client.getShoppingLists().then((nextLists) => setLists(nextLists)).catch((err: Error) => setError(err.message)).finally(() => setLoading(false))
-  }, [activeProfile])
+  }, [activeProfile, syncRevision])
 
   const createNewList = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -2312,6 +2523,7 @@ function ShoppingItemRow({ item, onToggle, onRemove, onSave }: {
 
 function ShoppingListDetailPage({ activeProfile }: { activeProfile: MealieProfile | null }) {
   const { id } = useParams()
+  const syncRevision = useSyncStatus().revision
   const [list, setList] = useState<MealieShoppingList | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -2325,7 +2537,7 @@ function ShoppingListDetailPage({ activeProfile }: { activeProfile: MealieProfil
     setLoading(true)
     setError('')
     client.getShoppingList(id).then((nextList) => setList(nextList)).catch((err: Error) => setError(err.message)).finally(() => setLoading(false))
-  }, [activeProfile, id])
+  }, [activeProfile, id, syncRevision])
 
   const addItem = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -2526,6 +2738,7 @@ function MealPlanPage({ activeProfile }: { activeProfile: MealieProfile | null }
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [pickerTarget, setPickerTarget] = useState<MealPlanTarget | null>(null)
+  const syncRevision = useSyncStatus().revision
 
   useEffect(() => {
     window.localStorage.setItem(MEAL_PLAN_VIEW_KEY, view)
@@ -2551,7 +2764,7 @@ function MealPlanPage({ activeProfile }: { activeProfile: MealieProfile | null }
     client.getMealPlans(toDateKey(rangeStart), toDateKey(rangeEnd)).then((nextEntries) => setEntries(nextEntries)).catch((err: Error) => setError(err.message)).finally(() => setLoading(false))
   }, [activeProfile, rangeStart, rangeEnd])
 
-  useEffect(() => { loadEntries() }, [loadEntries])
+  useEffect(() => { loadEntries() }, [loadEntries, syncRevision])
 
   const slots = useMemo(() => groupMealPlanEntriesIntoSlots(entries), [entries])
 

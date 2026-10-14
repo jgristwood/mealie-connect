@@ -113,7 +113,7 @@ describe('MealieClient', () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(new TypeError('Failed to fetch'))
     const client = new MealieClient({ baseUrl: 'http://mealie.test', token: 'token' })
 
-    await expect(client.importRecipeFromUrl('https://example.com/recipe')).rejects.toThrow('Failed to fetch')
+    await expect(client.importRecipeFromUrl('https://example.com/recipe')).rejects.toThrow("Can't reach your Mealie server")
   })
 
   it('uses organizer endpoints for categories and tags', async () => {
