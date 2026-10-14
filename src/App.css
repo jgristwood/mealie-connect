@@ -2205,6 +2205,10 @@ button.cook-timer-chip:hover {
   border: 1px solid var(--border);
 }
 
+.shopping-add-form .form-row > .shopping-add-food {
+  flex: 2;
+}
+
 .shopping-add-form .form-row > .btn-primary {
   min-width: 48px;
   min-height: 48px;
@@ -3806,8 +3810,9 @@ button.meal-plan-month-cell:hover {
   }
   .settings-section, .setup-section { padding: var(--sp-6); }
   .shopping-add-form .form-row { flex-wrap: wrap; }
-  .shopping-add-form .form-row > .form-field { flex: 1 1 30%; }
-  .shopping-add-form .form-row > .form-field[style] { flex-basis: 100%; }
+  .shopping-add-form .form-row > .form-field { flex: 1 1 0; min-width: 0; }
+  /* Item gets its own full-width line; Qty, Unit and + share the row below */
+  .shopping-add-form .form-row > .shopping-add-food { order: -1; flex-basis: 100%; }
   .cook-step-card { min-height: 0; border-radius: var(--radius-lg); }
   .cook-actions { width: 100%; }
   .cook-actions > * { flex: 1; }

@@ -2641,7 +2641,7 @@ function ShoppingListDetailPage({ activeProfile }: { activeProfile: MealieProfil
                     <label className="form-label" htmlFor="item-unit">Unit</label>
                     <input id="item-unit" className="form-input" type="text" value={newItemUnit} onChange={(event) => setNewItemUnit(event.target.value)} placeholder="cups" />
                   </div>
-                  <div className="form-field" style={{flex:2}}>
+                  <div className="form-field shopping-add-food">
                     <label className="form-label" htmlFor="item-food">Item</label>
                     <input id="item-food" className="form-input" type="text" value={newItemFood} onChange={(event) => setNewItemFood(event.target.value)} placeholder="Flour" />
                   </div>
