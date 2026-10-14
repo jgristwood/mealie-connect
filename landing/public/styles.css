@@ -181,7 +181,9 @@ button { font: inherit; color: inherit; }
 }
 
 .hero-title {
-  font-size: clamp(3.2rem, 9.6vw, 8.4rem);
+  /* Never wider than the page: "A better way to cook." is about 9.2em, so
+     cap the size to keep the title on exactly two lines. */
+  font-size: min(clamp(3.2rem, 9.6vw, 8.4rem), calc(min(100vw - var(--gutter) * 2, var(--container)) / 9.5));
   line-height: 0.95;
   letter-spacing: -0.055em;
 }
@@ -226,7 +228,8 @@ button { font: inherit; color: inherit; }
   color: var(--accent);
 }
 
-.narrow-heading { max-width: 18ch; margin-inline: auto; }
+/* Wide enough for "From “what should I cook?” to" on the first line. */
+.narrow-heading { max-width: 14em; margin-inline: auto; }
 
 /* Centered headings: the heading block stays centered on the page, but its
    lines align left. */
@@ -567,7 +570,7 @@ button { font: inherit; color: inherit; }
 
 .hero-pill { margin-bottom: 36px; }
 
-.hero-title .line { display: block; }
+.hero-title .line { display: block; white-space: nowrap; }
 
 .hero-title .word {
   display: inline-block;
