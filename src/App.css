@@ -1174,7 +1174,7 @@ a.home-tool-card:hover::after {
 
 .today-plan-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: var(--sp-4);
 }
 
@@ -2361,7 +2361,7 @@ button.cook-timer-chip:hover {
 
 .meal-plan-day-slots {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: var(--sp-4);
 }
 
@@ -3250,6 +3250,59 @@ button.meal-plan-month-cell:hover {
 
 .native-connection-status.online {
   display: none;
+}
+
+/* ---------------------------------------------------------
+   MEAL PLAN: SIDES, SNACKS AND TYPED-IN TITLES
+   --------------------------------------------------------- */
+.meal-slot-note {
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.meal-slot-add-extra {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-1);
+  min-height: 44px;
+  padding: 0 var(--sp-3);
+  border-radius: var(--radius-md);
+  border: 1px dashed var(--border-strong);
+  background: transparent;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  transition: color var(--ease-fast), border-color var(--ease-fast);
+}
+
+.meal-slot-add-extra:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.meal-slot-add-extra svg {
+  width: 16px;
+  height: 16px;
+}
+
+.meal-entry-modal-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+
+.meal-entry-modal-controls .form-select {
+  width: auto;
+  min-width: 140px;
+}
+
+.meal-entry-title-form .modal-actions {
+  margin-top: var(--sp-2);
 }
 
 /* ---------------------------------------------------------

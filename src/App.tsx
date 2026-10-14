@@ -47,7 +47,7 @@ import type {
   MealieWeekPlan,
   PlannableMealType,
 } from './types/mealie'
-import { PLANNABLE_MEAL_TYPES } from './types/mealie'
+import { EXTRA_MEAL_TYPES, MAIN_MEAL_TYPES, PLANNABLE_MEAL_TYPES } from './types/mealie'
 import './App.css'
 
 const APP_VERSION = __APP_VERSION__
@@ -57,6 +57,19 @@ const MEAL_TYPE_LABELS: Record<string, string> = {
   breakfast: 'Breakfast',
   lunch: 'Lunch',
   dinner: 'Dinner',
+  side: 'Side',
+  snack: 'Snack',
+}
+
+/** The name shown for a meal-plan entry: its recipe, else the typed-in title. */
+function mealPlanEntryName(entry: MealieWeekPlan): string {
+  return entry.recipe?.name || entry.title || entry.text || 'Untitled meal'
+}
+
+/** The meal types to show for a day: the main meals always, sides and
+ * snacks only when something is planned. */
+function visibleMealTypes(hasEntries: (mealType: PlannableMealType) => boolean): PlannableMealType[] {
+  return [...MAIN_MEAL_TYPES, ...EXTRA_MEAL_TYPES.filter(hasEntries)]
 }
 
 type ConnectivityState = 'online' | 'offline' | 'server-unreachable' | 'auth-failed'
@@ -593,7 +606,9 @@ function App() {
   )
 }
 
-const PLANNED_HERO_LABELS: Record<PlannableMealType, string> = {
+type MainMealType = (typeof MAIN_MEAL_TYPES)[number]
+
+const PLANNED_HERO_LABELS: Record<MainMealType, string> = {
   breakfast: "Today's breakfast",
   lunch: "Today's lunch",
   dinner: "Tonight's dinner",
@@ -602,7 +617,7 @@ const PLANNED_HERO_LABELS: Record<PlannableMealType, string> = {
 /** Picks the next meal still to come today that has a recipe attached, so
  * the home hero shows what's actually planned instead of a random recipe. */
 function pickPlannedHero(entries: MealieWeekPlan[], hour: number): { recipe: MealieRecipeSummary; label: string } | null {
-  const upcoming: PlannableMealType[] = hour < 10 ? ['breakfast', 'lunch', 'dinner'] : hour < 14 ? ['lunch', 'dinner'] : ['dinner']
+  const upcoming: MainMealType[] = hour < 10 ? ['breakfast', 'lunch', 'dinner'] : hour < 14 ? ['lunch', 'dinner'] : ['dinner']
   for (const mealType of upcoming) {
     const entry = entries.find((candidate) => (candidate.entryType ?? '').toLowerCase() === mealType && candidate.recipe?.id)
     if (entry?.recipe) return { recipe: entry.recipe, label: PLANNED_HERO_LABELS[mealType] }
@@ -727,7 +742,7 @@ function HomePage({ activeProfile, recipes, loading, error }: {
                   <Link className="btn-ghost btn-sm" to="/meal-plan">Open meal plan</Link>
                 </div>
                 <div className="today-plan-grid">
-                  {PLANNABLE_MEAL_TYPES.map((mealType) => {
+                  {visibleMealTypes((mealType) => todaySlots.some((slot) => slot.entryType === mealType)).map((mealType) => {
                     const entries = todaySlots.find((slot) => slot.entryType === mealType)?.entries ?? []
                     return (
                       <div key={mealType} className="today-plan-card">
@@ -739,8 +754,8 @@ function HomePage({ activeProfile, recipes, loading, error }: {
                             {entries.map((entry) => (
                               <li key={entry.id}>
                                 {entry.recipe?.slug
-                                  ? <Link to={`/recipes/${entry.recipe.slug}`}>{entry.recipe.name ?? entry.title}</Link>
-                                  : <span>{entry.recipe?.name ?? entry.title ?? entry.text ?? 'Untitled meal'}</span>}
+                                  ? <Link to={`/recipes/${entry.recipe.slug}`}>{mealPlanEntryName(entry)}</Link>
+                                  : <span>{mealPlanEntryName(entry)}</span>}
                               </li>
                             ))}
                           </ul>
@@ -2218,13 +2233,25 @@ function getStoredMealPlanView(): MealPlanView {
   return stored === 'day' || stored === 'week' || stored === 'month' ? stored : 'week'
 }
 
+/** What to put in a meal-plan slot: a recipe, or a title typed in by hand
+ * (for leftovers, eating out, or a quick side that has no recipe). */
+type MealPlanEntryChoice =
+  | { mealType: PlannableMealType; recipe: MealieRecipeSummary }
+  | { mealType: PlannableMealType; title: string; text: string }
+
+interface MealPlanTarget {
+  date: string
+  mealType: PlannableMealType
+  replaceEntryId?: string
+}
+
 function MealPlanPage({ activeProfile }: { activeProfile: MealieProfile | null }) {
   const [view, setView] = useState<MealPlanView>(() => getStoredMealPlanView())
   const [anchorDate, setAnchorDate] = useState(() => new Date())
   const [entries, setEntries] = useState<MealieWeekPlan[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [pickerTarget, setPickerTarget] = useState<{ date: string; mealType: PlannableMealType; replaceEntryId?: string } | null>(null)
+  const [pickerTarget, setPickerTarget] = useState<MealPlanTarget | null>(null)
 
   useEffect(() => {
     window.localStorage.setItem(MEAL_PLAN_VIEW_KEY, view)
@@ -2267,25 +2294,27 @@ function MealPlanPage({ activeProfile }: { activeProfile: MealieProfile | null }
       await client.deleteMealPlanEntry(entryId)
       setEntries((current) => current.filter((entry) => entry.id !== entryId))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to remove that recipe from the meal plan.')
+      setError(err instanceof Error ? err.message : 'Failed to remove that meal from the meal plan.')
     }
   }
 
-  const addRecipeToSlot = async (date: string, mealType: PlannableMealType, recipe: MealieRecipeSummary, replaceEntryId?: string) => {
+  const addEntryToSlot = async (target: MealPlanTarget, choice: MealPlanEntryChoice) => {
     if (!activeProfile) return
     const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
     setError('')
     try {
       // Create the new entry before deleting the old one so a failure never
       // leaves the slot empty.
-      const created = await client.createMealPlanEntry({ date, entryType: mealType, title: recipe.name, recipeId: recipe.id })
+      const created = await client.createMealPlanEntry('recipe' in choice
+        ? { date: target.date, entryType: choice.mealType, title: choice.recipe.name, recipeId: choice.recipe.id }
+        : { date: target.date, entryType: choice.mealType, title: choice.title, text: choice.text })
       setEntries((current) => [...current, created])
-      if (replaceEntryId) {
-        await client.deleteMealPlanEntry(replaceEntryId)
-        setEntries((current) => current.filter((entry) => entry.id !== replaceEntryId))
+      if (target.replaceEntryId) {
+        await client.deleteMealPlanEntry(target.replaceEntryId)
+        setEntries((current) => current.filter((entry) => entry.id !== target.replaceEntryId))
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add that recipe to the meal plan.')
+      setError(err instanceof Error ? err.message : 'Failed to add that to the meal plan.')
     } finally {
       setPickerTarget(null)
     }
@@ -2302,6 +2331,8 @@ function MealPlanPage({ activeProfile }: { activeProfile: MealieProfile | null }
     if (view === 'week') return new Date(current.getTime() + 7 * DAY_MS)
     return new Date(current.getFullYear(), current.getMonth() + 1, 1)
   })
+
+  const openDay = (date: string) => { setAnchorDate(parseDateKey(date)); setView('day') }
 
   return (
     <div className="app-page">
@@ -2340,29 +2371,34 @@ function MealPlanPage({ activeProfile }: { activeProfile: MealieProfile | null }
             {loading ? <p style={{color:'var(--text-muted)'}}>Loading meal plans...</p> : null}
 
             {view === 'day' ? (
-              <MealPlanDayView date={anchorDate} slotsFor={slotsFor} onAddRecipe={(mealType) => setPickerTarget({ date: toDateKey(anchorDate), mealType })} onRemove={removeEntry} onReplace={(mealType, entry) => setPickerTarget({ date: toDateKey(anchorDate), mealType, replaceEntryId: entry.id })} />
+              <MealPlanDayView date={anchorDate} slotsFor={slotsFor} onAdd={setPickerTarget} onRemove={removeEntry} />
             ) : null}
             {view === 'week' ? (
-              <MealPlanWeekView weekStart={rangeStart} slotsFor={slotsFor} onAddRecipe={(date, mealType) => setPickerTarget({ date, mealType })} onRemove={removeEntry} onReplace={(date, mealType, entry) => setPickerTarget({ date, mealType, replaceEntryId: entry.id })} onOpenDay={(date) => { setAnchorDate(parseDateKey(date)); setView('day') }} />
+              <MealPlanWeekView weekStart={rangeStart} slotsFor={slotsFor} onAdd={setPickerTarget} onRemove={removeEntry} onOpenDay={openDay} />
             ) : null}
             {view === 'month' ? (
-              <MealPlanMonthView monthStart={rangeStart} slots={slots} onOpenDay={(date) => { setAnchorDate(parseDateKey(date)); setView('day') }} />
+              <MealPlanMonthView monthStart={rangeStart} slots={slots} onOpenDay={openDay} />
             ) : null}
           </>
         )}
 
         {pickerTarget && activeProfile ? (
-          <RecipePickerModal activeProfile={activeProfile} title={pickerTarget.replaceEntryId ? 'Replace recipe' : `Add a recipe to ${MEAL_TYPE_LABELS[pickerTarget.mealType] ?? pickerTarget.mealType}`} onSelect={(recipe) => void addRecipeToSlot(pickerTarget.date, pickerTarget.mealType, recipe, pickerTarget.replaceEntryId)} onClose={() => setPickerTarget(null)} />
+          <MealPlanEntryModal
+            activeProfile={activeProfile}
+            target={pickerTarget}
+            onSelect={(choice) => void addEntryToSlot(pickerTarget, choice)}
+            onClose={() => setPickerTarget(null)}
+          />
         ) : null}
       </main>
     </div>
   )
 }
 
-function MealSlotCard({ mealType, entries, onAddRecipe, onRemove, onReplace }: {
+function MealSlotCard({ mealType, entries, onAdd, onRemove, onReplace }: {
   mealType: PlannableMealType
   entries: MealieWeekPlan[]
-  onAddRecipe: () => void
+  onAdd: () => void
   onRemove: (entryId: string) => void
   onReplace: (entry: MealieWeekPlan) => void
 }) {
@@ -2373,7 +2409,8 @@ function MealSlotCard({ mealType, entries, onAddRecipe, onRemove, onReplace }: {
       <ul className="meal-slot-recipe-list">
         {entries.map((entry) => (
           <li key={entry.id} className="meal-slot-recipe">
-            <span className="meal-slot-recipe-name">{entry.recipe?.name ?? entry.title ?? 'Untitled meal'}</span>
+            <span className="meal-slot-recipe-name">{mealPlanEntryName(entry)}</span>
+            {!entry.recipe && entry.text && entry.text !== entry.title ? <span className="meal-slot-note">{entry.text}</span> : null}
             <div className="meal-slot-recipe-actions">
               {entry.recipe?.slug ? <Link className="meal-slot-action-link" to={`/recipes/${entry.recipe.slug}`}>View</Link> : null}
               <button type="button" className="meal-slot-action-link" onClick={() => onReplace(entry)}>Replace</button>
@@ -2382,17 +2419,46 @@ function MealSlotCard({ mealType, entries, onAddRecipe, onRemove, onReplace }: {
           </li>
         ))}
       </ul>
-      <button type="button" className="btn-ghost btn-sm" onClick={onAddRecipe}><Plus /> Add</button>
+      <button type="button" className="btn-ghost btn-sm" onClick={onAdd}><Plus /> Add</button>
     </div>
   )
 }
 
-function MealPlanDayView({ date, slotsFor, onAddRecipe, onRemove, onReplace }: {
+/** The meal slots for one day, plus a button for adding a side or snack. */
+function MealPlanDaySlots({ dateKey, slotsFor, onAdd, onRemove }: {
+  dateKey: string
+  slotsFor: (dateKey: string, mealType: PlannableMealType) => MealieWeekPlan[]
+  onAdd: (target: MealPlanTarget) => void
+  onRemove: (entryId: string) => void
+}) {
+  const mealTypes = visibleMealTypes((mealType) => slotsFor(dateKey, mealType).length > 0)
+  const missingExtra = EXTRA_MEAL_TYPES.find((mealType) => !mealTypes.includes(mealType))
+  return (
+    <>
+      {mealTypes.map((mealType) => (
+        <MealSlotCard
+          key={mealType}
+          mealType={mealType}
+          entries={slotsFor(dateKey, mealType)}
+          onAdd={() => onAdd({ date: dateKey, mealType })}
+          onRemove={onRemove}
+          onReplace={(entry) => onAdd({ date: dateKey, mealType, replaceEntryId: entry.id })}
+        />
+      ))}
+      {missingExtra ? (
+        <button type="button" className="meal-slot-add-extra" onClick={() => onAdd({ date: dateKey, mealType: missingExtra })}>
+          <Plus /> Side or snack
+        </button>
+      ) : null}
+    </>
+  )
+}
+
+function MealPlanDayView({ date, slotsFor, onAdd, onRemove }: {
   date: Date
   slotsFor: (dateKey: string, mealType: PlannableMealType) => MealieWeekPlan[]
-  onAddRecipe: (mealType: PlannableMealType) => void
+  onAdd: (target: MealPlanTarget) => void
   onRemove: (entryId: string) => void
-  onReplace: (mealType: PlannableMealType, entry: MealieWeekPlan) => void
 }) {
   const dateKey = toDateKey(date)
   return (
@@ -2402,20 +2468,17 @@ function MealPlanDayView({ date, slotsFor, onAddRecipe, onRemove, onReplace }: {
         <span className="meal-plan-day-heading-date">{date.toLocaleDateString(undefined, { month: 'long', day: 'numeric' })}</span>
       </h2>
       <div className="meal-plan-day-slots">
-        {PLANNABLE_MEAL_TYPES.map((mealType) => (
-          <MealSlotCard key={mealType} mealType={mealType} entries={slotsFor(dateKey, mealType)} onAddRecipe={() => onAddRecipe(mealType)} onRemove={onRemove} onReplace={(entry) => onReplace(mealType, entry)} />
-        ))}
+        <MealPlanDaySlots dateKey={dateKey} slotsFor={slotsFor} onAdd={onAdd} onRemove={onRemove} />
       </div>
     </section>
   )
 }
 
-function MealPlanWeekView({ weekStart, slotsFor, onAddRecipe, onRemove, onReplace, onOpenDay }: {
+function MealPlanWeekView({ weekStart, slotsFor, onAdd, onRemove, onOpenDay }: {
   weekStart: Date
   slotsFor: (dateKey: string, mealType: PlannableMealType) => MealieWeekPlan[]
-  onAddRecipe: (date: string, mealType: PlannableMealType) => void
+  onAdd: (target: MealPlanTarget) => void
   onRemove: (entryId: string) => void
-  onReplace: (date: string, mealType: PlannableMealType, entry: MealieWeekPlan) => void
   onOpenDay: (date: string) => void
 }) {
   const days = useMemo(() => Array.from({ length: 7 }, (_, index) => new Date(weekStart.getTime() + index * DAY_MS)), [weekStart])
@@ -2430,15 +2493,21 @@ function MealPlanWeekView({ weekStart, slotsFor, onAddRecipe, onRemove, onReplac
               <span className="meal-plan-week-day-number">{day.getDate()}</span>
             </button>
             <div className="meal-plan-week-day-slots">
-              {PLANNABLE_MEAL_TYPES.map((mealType) => (
-                <MealSlotCard key={mealType} mealType={mealType} entries={slotsFor(dateKey, mealType)} onAddRecipe={() => onAddRecipe(dateKey, mealType)} onRemove={onRemove} onReplace={(entry) => onReplace(dateKey, mealType, entry)} />
-              ))}
+              <MealPlanDaySlots dateKey={dateKey} slotsFor={slotsFor} onAdd={onAdd} onRemove={onRemove} />
             </div>
           </div>
         )
       })}
     </section>
   )
+}
+
+const MONTH_SUMMARY_LABELS: Record<PlannableMealType, string> = {
+  breakfast: 'B',
+  lunch: 'L',
+  dinner: 'D',
+  side: 'Side',
+  snack: 'Snack',
 }
 
 function MealPlanMonthView({ monthStart, slots, onOpenDay }: {
@@ -2468,9 +2537,7 @@ function MealPlanMonthView({ monthStart, slots, onOpenDay }: {
   const mealSummary = (mealType: PlannableMealType, daySlots: MealPlanSlot[]) => {
     const slot = daySlots.find((candidate) => candidate.entryType === mealType)
     if (!slot || slot.entries.length === 0) return null
-    const names = slot.entries.map((entry) => entry.recipe?.name ?? entry.title ?? 'Untitled')
-    const label = mealType === 'breakfast' ? 'B' : mealType === 'lunch' ? 'L' : 'D'
-    return `${label}: ${names.join(", ")}`
+    return `${MONTH_SUMMARY_LABELS[mealType]}: ${slot.entries.map(mealPlanEntryName).join(', ')}`
   }
 
   return (
@@ -2497,13 +2564,24 @@ function MealPlanMonthView({ monthStart, slots, onOpenDay }: {
   )
 }
 
-function RecipePickerModal({ activeProfile, title, onSelect, onClose }: {
+function MealTypeSelect({ id, value, onChange }: { id: string; value: PlannableMealType; onChange: (value: PlannableMealType) => void }) {
+  return (
+    <select id={id} className="form-select" value={value} onChange={(event) => onChange(event.target.value as PlannableMealType)}>
+      {PLANNABLE_MEAL_TYPES.map((type) => (<option key={type} value={type}>{MEAL_TYPE_LABELS[type]}</option>))}
+    </select>
+  )
+}
+
+/** Picks what goes in a meal-plan slot: search for a recipe, or type a title. */
+function MealPlanEntryModal({ activeProfile, target, onSelect, onClose }: {
   activeProfile: MealieProfile
-  title: string
-  onSelect: (recipe: MealieRecipeSummary) => void
+  target: MealPlanTarget
+  onSelect: (choice: MealPlanEntryChoice) => void
   onClose: () => void
 }) {
   useModalEscapeToClose(onClose)
+  const [mode, setMode] = useState<'recipe' | 'title'>('recipe')
+  const [mealType, setMealType] = useState<PlannableMealType>(target.mealType)
   const [search, setSearch] = useState('')
   const [categories, setCategories] = useState<MealieCategory[]>([])
   const [tags, setTags] = useState<MealieTag[]>([])
@@ -2512,6 +2590,8 @@ function RecipePickerModal({ activeProfile, title, onSelect, onClose }: {
   const [recipes, setRecipes] = useState<MealieRecipeSummary[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [title, setTitle] = useState('')
+  const [note, setNote] = useState('')
 
   useEffect(() => {
     const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
@@ -2520,6 +2600,7 @@ function RecipePickerModal({ activeProfile, title, onSelect, onClose }: {
   }, [activeProfile])
 
   useEffect(() => {
+    if (mode !== 'recipe') return
     const client = new MealieClient({ baseUrl: activeProfile.server, token: activeProfile.token })
     setLoading(true)
     setError('')
@@ -2530,36 +2611,75 @@ function RecipePickerModal({ activeProfile, title, onSelect, onClose }: {
         .finally(() => setLoading(false))
     }, 250)
     return () => window.clearTimeout(timeout)
-  }, [activeProfile, search, categoryId, tagId])
+  }, [activeProfile, mode, search, categoryId, tagId])
+
+  const submitTitle = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!title.trim()) return
+    onSelect({ mealType, title: title.trim(), text: note.trim() })
+  }
+
+  const mealLabel = MEAL_TYPE_LABELS[mealType] ?? mealType
+  const heading = target.replaceEntryId
+    ? 'Replace meal'
+    : (EXTRA_MEAL_TYPES as readonly string[]).includes(mealType) ? `Add a ${mealLabel.toLowerCase()}` : `Add to ${mealLabel}`
 
   return (
-    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label={title}>
+    <div className="modal-overlay" role="dialog" aria-modal="true" aria-label={heading}>
       <div className="modal-panel recipe-picker-panel">
-        <h3>{title}</h3>
-        <div className="recipe-picker-filters">
-          <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search recipes..." aria-label="Search recipes" />
-          <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} aria-label="Filter by category">
-            <option value="">All categories</option>
-            {categories.map((category) => (<option key={category.id} value={category.id}>{category.name}</option>))}
-          </select>
-          <select value={tagId} onChange={(event) => setTagId(event.target.value)} aria-label="Filter by tag">
-            <option value="">All tags</option>
-            {tags.map((tag) => (<option key={tag.id} value={tag.id}>{tag.name}</option>))}
-          </select>
+        <h3>{heading}</h3>
+        <div className="meal-entry-modal-controls">
+          <div className="segmented" role="tablist" aria-label="What to add">
+            <button type="button" role="tab" aria-selected={mode === 'recipe'} className={mode === 'recipe' ? 'segmented-btn active' : 'segmented-btn'} onClick={() => setMode('recipe')}>Recipe</button>
+            <button type="button" role="tab" aria-selected={mode === 'title'} className={mode === 'title' ? 'segmented-btn active' : 'segmented-btn'} onClick={() => setMode('title')}>Type a title</button>
+          </div>
+          <label className="sr-only" htmlFor="meal-entry-type">Meal</label>
+          <MealTypeSelect id="meal-entry-type" value={mealType} onChange={setMealType} />
         </div>
-        {error ? <p className="error-message">{error}</p> : null}
-        {loading ? <p style={{color:'var(--text-muted)', padding:'var(--sp-2)'}}>Searching...</p> : null}
-        <ul className="recipe-picker-results">
-          {!loading && recipes.length === 0 ? <li className="meal-slot-empty">No recipes match.</li> : null}
-          {recipes.map((recipe) => (
-            <li key={recipe.id}>
-              <button type="button" className="recipe-picker-result" onClick={() => onSelect(recipe)}>{recipe.name}</button>
-            </li>
-          ))}
-        </ul>
-        <div className="modal-actions">
-          <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
-        </div>
+
+        {mode === 'recipe' ? (
+          <>
+            <div className="recipe-picker-filters">
+              <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search recipes..." aria-label="Search recipes" />
+              <select value={categoryId} onChange={(event) => setCategoryId(event.target.value)} aria-label="Filter by category">
+                <option value="">All categories</option>
+                {categories.map((category) => (<option key={category.id} value={category.id}>{category.name}</option>))}
+              </select>
+              <select value={tagId} onChange={(event) => setTagId(event.target.value)} aria-label="Filter by tag">
+                <option value="">All tags</option>
+                {tags.map((tag) => (<option key={tag.id} value={tag.id}>{tag.name}</option>))}
+              </select>
+            </div>
+            {error ? <p className="error-message">{error}</p> : null}
+            {loading ? <p style={{color:'var(--text-muted)', padding:'var(--sp-2)'}}>Searching...</p> : null}
+            <ul className="recipe-picker-results">
+              {!loading && recipes.length === 0 ? <li className="meal-slot-empty">No recipes match. You can also type a title instead.</li> : null}
+              {recipes.map((recipe) => (
+                <li key={recipe.id}>
+                  <button type="button" className="recipe-picker-result" onClick={() => onSelect({ mealType, recipe })}>{recipe.name}</button>
+                </li>
+              ))}
+            </ul>
+            <div className="modal-actions">
+              <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
+            </div>
+          </>
+        ) : (
+          <form className="form-stack meal-entry-title-form" onSubmit={submitTitle}>
+            <div className="form-field">
+              <label className="form-label" htmlFor="meal-entry-title">Title</label>
+              <input id="meal-entry-title" className="form-input" type="text" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Leftovers, Pizza night, Side salad..." autoFocus />
+            </div>
+            <div className="form-field">
+              <label className="form-label" htmlFor="meal-entry-note">Note (optional)</label>
+              <input id="meal-entry-note" className="form-input" type="text" value={note} onChange={(event) => setNote(event.target.value)} placeholder="From Tuesday's roast" />
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="btn-ghost" onClick={onClose}>Cancel</button>
+              <button type="submit" className="btn-primary" disabled={!title.trim()}>{target.replaceEntryId ? 'Replace' : 'Add to Meal Plan'}</button>
+            </div>
+          </form>
+        )}
       </div>
     </div>
   )

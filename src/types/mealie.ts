@@ -129,9 +129,12 @@ export interface MealieWeekPlan {
   planDays?: MealieMealPlanDay[]
 }
 
-/** The only meal types offered when creating a new meal-plan entry. */
-export const PLANNABLE_MEAL_TYPES = ['breakfast', 'lunch', 'dinner'] as const
+/** The meal types offered when creating a new meal-plan entry. */
+export const PLANNABLE_MEAL_TYPES = ['breakfast', 'lunch', 'dinner', 'side', 'snack'] as const
 export type PlannableMealType = (typeof PLANNABLE_MEAL_TYPES)[number]
+/** The meals every day shows a slot for; sides and snacks appear once added. */
+export const MAIN_MEAL_TYPES = ['breakfast', 'lunch', 'dinner'] as const satisfies readonly PlannableMealType[]
+export const EXTRA_MEAL_TYPES = ['side', 'snack'] as const satisfies readonly PlannableMealType[]
 
 /** Appearance preference; "system" follows the device's light/dark setting. */
 export type ThemeMode = 'light' | 'dark' | 'system'
